@@ -33,6 +33,21 @@ func TestRegisterStaticFiles(t *testing.T) {
 		t.Fatalf("robots.txt body = %q", body)
 	}
 
+	response, err = app.Test(httptest.NewRequest("GET", "/index.html", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("index.html status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Leaderboard") {
+		t.Fatalf("index.html does not contain the dashboard title")
+	}
+
 	response, err = app.Test(httptest.NewRequest("GET", "/healthz", nil))
 	if err != nil {
 		t.Fatal(err)

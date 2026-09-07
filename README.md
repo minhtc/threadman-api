@@ -178,7 +178,7 @@ A successful score is committed before rank/top-10 enrichment. The response repo
 
 ### Leaderboard
 
-`GET /v1/game/threadman/leaderboard` — default rate limit: 60 requests/minute/IP.
+`GET /v1/game/threadman/leaderboard` — default rate limit: 60 requests/minute/IP. Add `?date=YYYY-MM-DD` to inspect a specific day; omit it to use the current day in `LEADERBOARD_TIMEZONE`.
 
 ```json
 {

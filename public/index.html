@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Threadman daily leaderboard">
+  <title>Threadman leaderboard</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171717;
+      --muted: #777;
+      --line: #e8e8e8;
+      --soft: #f7f7f5;
+      --accent: #f2c94c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #fff;
+      color: var(--ink);
+      font: 15px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(680px, calc(100% - 40px)); margin: 0 auto; padding: 64px 0 80px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 42px; }
+    h1 { margin: 0; font-size: clamp(28px, 6vw, 44px); letter-spacing: -.055em; line-height: 1; }
+    .eyebrow { margin: 0 0 10px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 600; }
+    select, input, button { height: 38px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; }
+    select, input { padding: 0 10px; }
+    button { padding: 0 15px; cursor: pointer; }
+    button:hover { border-color: #aaa; }
+    .top-player { position: relative; overflow: hidden; margin-bottom: 28px; padding: 27px 28px; border-radius: 12px; background: var(--soft); }
+    .top-player::after { position: absolute; right: -25px; bottom: -55px; width: 160px; height: 160px; border-radius: 50%; background: var(--accent); content: ""; opacity: .75; }
+    .top-label { color: var(--muted); font-size: 12px; }
+    .top-name { position: relative; z-index: 1; margin: 6px 0 0; font-size: clamp(25px, 5vw, 36px); font-weight: 700; letter-spacing: -.04em; }
+    .top-score { position: relative; z-index: 1; margin: 4px 0 0; font-size: 14px; }
+    .top-score strong { font-size: 20px; }
+    .heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 9px; }
+    h2 { margin: 0; font-size: 13px; letter-spacing: .02em; }
+    #date-label { color: var(--muted); font-size: 12px; }
+    ol { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+    li { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; min-height: 53px; border-bottom: 1px solid var(--line); }
+    .rank { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .player { font-weight: 600; }
+    .score { font-variant-numeric: tabular-nums; }
+    .status { min-height: 24px; margin: 20px 0 0; color: var(--muted); font-size: 13px; }
+    @media (max-width: 520px) { main { padding-top: 38px; } header { display: block; margin-bottom: 30px; } .controls { margin-top: 24px; } .controls label { flex: 1; } .controls button { align-self: end; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">Daily scores</p>
+        <h1>Leaderboard</h1>
+      </div>
+      <div class="controls" aria-label="Leaderboard filters">
+        <label>Game <select id="game"><option value="threadman">Threadman</option></select></label>
+        <label>Date <input id="date" type="date"></label>
+        <button id="load" type="button">View</button>
+      </div>
+    </header>
+
+    <section class="top-player" aria-live="polite">
+      <div class="top-label">Top player</div>
+      <div class="top-name" id="top-name">—</div>
+      <div class="top-score" id="top-score">No score yet</div>
+    </section>
+
+    <section>
+      <div class="heading"><h2>Top 10</h2><span id="date-label"></span></div>
+      <ol id="scores"></ol>
+      <p class="status" id="status" role="status"></p>
+    </section>
+  </main>
+  <script>
+    const game = document.querySelector('#game');
+    const date = document.querySelector('#date');
+    const load = document.querySelector('#load');
+    const topName = document.querySelector('#top-name');
+    const topScore = document.querySelector('#top-score');
+    const scores = document.querySelector('#scores');
+    const status = document.querySelector('#status');
+    const dateLabel = document.querySelector('#date-label');
+
+    const today = new Date().toLocaleDateString('en-CA');
+    date.value = today;
+    date.max = today;
+
+    function render(entries) {
+      const top = entries[0];
+      topName.textContent = top ? top.player_name : 'No scores yet';
+      topScore.innerHTML = top ? `<strong>${top.score.toLocaleString()}</strong> points · rank ${top.rank}` : 'Be the first to play';
+      scores.innerHTML = entries.map(entry => `
+        <li><span class="rank">${String(entry.rank).padStart(2, '0')}</span><span class="player"></span><span class="score">${entry.score.toLocaleString()}</span></li>
+      `).join('');
+      entries.forEach((entry, index) => { scores.children[index].querySelector('.player').textContent = entry.player_name; });
+    }
+
+    async function fetchLeaderboard() {
+      load.disabled = true;
+      status.textContent = 'Loading…';
+      try {
+        const params = new URLSearchParams({ date: date.value });
+        const response = await fetch(`/v1/game/${encodeURIComponent(game.value)}/leaderboard?${params}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to load leaderboard');
+        dateLabel.textContent = data.score_date;
+        render(data.top10 || []);
+        status.textContent = data.top10?.length ? '' : 'No scores for this date.';
+      } catch (error) {
+        render([]);
+        status.textContent = error.message;
+      } finally { load.disabled = false; }
+    }
+
+    load.addEventListener('click', fetchLeaderboard);
+    date.addEventListener('change', fetchLeaderboard);
+    fetchLeaderboard();
+  </script>
+</body>
+</html>

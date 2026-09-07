@@ -79,8 +79,11 @@ func (s *Service) SubmitScore(ctx context.Context, gameCode string, sessionID uu
 	return result, nil
 }
 
-func (s *Service) Leaderboard(ctx context.Context, gameCode string) (string, []LeaderboardEntry, error) {
-	date := s.now().In(s.timezone).Format("2006-01-02")
+func (s *Service) Leaderboard(ctx context.Context, gameCode, requestedDate string) (string, []LeaderboardEntry, error) {
+	date := requestedDate
+	if date == "" {
+		date = s.now().In(s.timezone).Format("2006-01-02")
+	}
 	entries, err := s.repo.Top10(ctx, gameCode, date)
 	return date, entries, err
 }
