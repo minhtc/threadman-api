@@ -187,6 +187,7 @@
         }
         .controls label {
           flex: 1;
+          cursor: pointer;
         }
         .controls button {
           align-self: end;
@@ -203,12 +204,11 @@
         </div>
         <div class="controls" aria-label="Leaderboard filters">
           <label
-            >Game
-            <select id="game">
+            ><select id="game">
               <option value="threadman">Threadman</option>
             </select></label
           >
-          <label>Date <input id="date" type="date" /></label>
+          <label><input id="date" type="date" /></label>
           <button id="load" type="button">View</button>
         </div>
       </header>

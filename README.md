@@ -113,7 +113,7 @@ This project is not deployed yet, so `database/schema.sql` is intentionally the 
 | `DB_MAX_CONNS`                  | `15`                  | PostgreSQL pool maximum                                |
 | `DB_MIN_CONNS`                  | `3`                   | PostgreSQL pool minimum                                |
 | `TRUST_PROXY`                   | `false`               | Enable trusted-proxy client IP extraction              |
-| `PROXY_HEADER`                  | `X-Forwarded-For`     | Proxy client-IP header                                 |
+| `PROXY_HEADER`                  | `CF-Connecting-IP`    | Proxy client-IP header                                 |
 | `TRUSTED_PROXIES`               | empty                 | Trusted IPs/CIDRs; required when proxy mode is enabled |
 
 The API applies the canonical `SCHEMA_PATH` file during startup before serving requests. Schema setup is idempotent; a missing or invalid schema stops startup instead of allowing a partially working API to return database errors. Compose also mounts the same schema into PostgreSQL for first-time database initialization.
