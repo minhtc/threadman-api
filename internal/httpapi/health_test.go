@@ -8,7 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"homielab-api/internal/config"
+	"threadman-api/internal/config"
 )
 
 func testConfig() *config.Config {

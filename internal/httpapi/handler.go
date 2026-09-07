@@ -18,8 +18,8 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/google/uuid"
 
-	"homielab-api/internal/config"
-	"homielab-api/internal/leaderboard"
+	"threadman-api/internal/config"
+	"threadman-api/internal/leaderboard"
 )
 
 type Handler struct {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"homielab-api/internal/config"
+	"threadman-api/internal/config"
 )
 
 func Open(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {

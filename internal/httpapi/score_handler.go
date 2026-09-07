@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"homielab-api/internal/leaderboard"
+	"threadman-api/internal/leaderboard"
 )
 
 func (h *Handler) submitScore(c fiber.Ctx) error {

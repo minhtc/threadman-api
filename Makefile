@@ -25,7 +25,7 @@ vet:
 	go vet ./...
 
 build:
-	go build -o bin/homielab-api ./cmd/server
+	go build -o bin/threadman-api ./cmd/server
 
 run:
 	go run ./cmd/server

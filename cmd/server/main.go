@@ -10,9 +10,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"homielab-api/internal/app"
-	"homielab-api/internal/config"
-	"homielab-api/internal/database"
+	"threadman-api/internal/app"
+	"threadman-api/internal/config"
+	"threadman-api/internal/database"
 )
 
 func main() {

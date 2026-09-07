@@ -85,36 +85,36 @@ This project is not deployed yet, so `database/schema.sql` is intentionally the 
 
 ## Configuration
 
-| Variable                        | Default           | Description                                            |
-| ------------------------------- | ----------------- | ------------------------------------------------------ |
-| `PORT`                          | `8080`            | HTTP listen port, `1`–`65535`                          |
-| `DATABASE_URL`                  | required          | PostgreSQL connection URL                              |
-| `SCHEMA_PATH`                   | `database/schema.sql` | Canonical schema applied during startup             |
-| `SESSION_SECRET_ENCRYPTION_KEY` | required          | Base64-encoded 32-byte key for secrets at rest         |
-| `LEADERBOARD_TIMEZONE`          | `UTC`             | IANA timezone for `score_date`                         |
-| `ALLOWED_ORIGINS`               | `*`               | Comma-separated `http`/`https` origins                 |
-| `SESSION_TTL`                   | `10m`             | Session lifetime                                       |
-| `MAX_ACTIVE_SESSIONS`           | `5`               | Active sessions per player/game                        |
-| `PRUNE_INTERVAL`                | `15m`             | Abandoned-session cleanup interval                     |
-| `SESSION_RATE_LIMIT`            | `20`              | Session requests per rate window/IP                    |
-| `SCORE_RATE_LIMIT`              | `10`              | Score requests per rate window/IP                      |
-| `LEADERBOARD_RATE_LIMIT`        | `60`              | Leaderboard requests per rate window/IP                |
-| `RATE_LIMIT_WINDOW`             | `1m`              | Rate-limit window                                      |
-| `BODY_LIMIT_BYTES`              | `4096`            | Maximum request body size                              |
-| `REQUEST_TIMEOUT`               | `3s`              | Database-backed request timeout                        |
-| `READINESS_TIMEOUT`             | `2s`              | Readiness probe timeout                                |
-| `PRUNE_TIMEOUT`                 | `5s`              | Pruning query timeout                                  |
-| `DB_CONNECT_TIMEOUT`            | `5s`              | PostgreSQL connection initialization timeout           |
-| `DB_PING_TIMEOUT`               | `5s`              | PostgreSQL pool ping timeout                           |
-| `READ_TIMEOUT`                  | `10s`             | HTTP read timeout                                      |
-| `WRITE_TIMEOUT`                 | `10s`             | HTTP write timeout                                     |
-| `IDLE_TIMEOUT`                  | `30s`             | Keep-alive idle timeout                                |
-| `SHUTDOWN_TIMEOUT`              | `10s`             | Graceful shutdown timeout                              |
-| `DB_MAX_CONNS`                  | `15`              | PostgreSQL pool maximum                                |
-| `DB_MIN_CONNS`                  | `3`               | PostgreSQL pool minimum                                |
-| `TRUST_PROXY`                   | `false`           | Enable trusted-proxy client IP extraction              |
-| `PROXY_HEADER`                  | `X-Forwarded-For` | Proxy client-IP header                                 |
-| `TRUSTED_PROXIES`               | empty             | Trusted IPs/CIDRs; required when proxy mode is enabled |
+| Variable                        | Default               | Description                                            |
+| ------------------------------- | --------------------- | ------------------------------------------------------ |
+| `PORT`                          | `8080`                | HTTP listen port, `1`–`65535`                          |
+| `DATABASE_URL`                  | required              | PostgreSQL connection URL                              |
+| `SCHEMA_PATH`                   | `database/schema.sql` | Canonical schema applied during startup                |
+| `SESSION_SECRET_ENCRYPTION_KEY` | required              | Base64-encoded 32-byte key for secrets at rest         |
+| `LEADERBOARD_TIMEZONE`          | `UTC`                 | IANA timezone for `score_date`                         |
+| `ALLOWED_ORIGINS`               | `*`                   | Comma-separated `http`/`https` origins                 |
+| `SESSION_TTL`                   | `10m`                 | Session lifetime                                       |
+| `MAX_ACTIVE_SESSIONS`           | `5`                   | Active sessions per player/game                        |
+| `PRUNE_INTERVAL`                | `15m`                 | Abandoned-session cleanup interval                     |
+| `SESSION_RATE_LIMIT`            | `20`                  | Session requests per rate window/IP                    |
+| `SCORE_RATE_LIMIT`              | `10`                  | Score requests per rate window/IP                      |
+| `LEADERBOARD_RATE_LIMIT`        | `60`                  | Leaderboard requests per rate window/IP                |
+| `RATE_LIMIT_WINDOW`             | `1m`                  | Rate-limit window                                      |
+| `BODY_LIMIT_BYTES`              | `4096`                | Maximum request body size                              |
+| `REQUEST_TIMEOUT`               | `3s`                  | Database-backed request timeout                        |
+| `READINESS_TIMEOUT`             | `2s`                  | Readiness probe timeout                                |
+| `PRUNE_TIMEOUT`                 | `5s`                  | Pruning query timeout                                  |
+| `DB_CONNECT_TIMEOUT`            | `5s`                  | PostgreSQL connection initialization timeout           |
+| `DB_PING_TIMEOUT`               | `5s`                  | PostgreSQL pool ping timeout                           |
+| `READ_TIMEOUT`                  | `10s`                 | HTTP read timeout                                      |
+| `WRITE_TIMEOUT`                 | `10s`                 | HTTP write timeout                                     |
+| `IDLE_TIMEOUT`                  | `30s`                 | Keep-alive idle timeout                                |
+| `SHUTDOWN_TIMEOUT`              | `10s`                 | Graceful shutdown timeout                              |
+| `DB_MAX_CONNS`                  | `15`                  | PostgreSQL pool maximum                                |
+| `DB_MIN_CONNS`                  | `3`                   | PostgreSQL pool minimum                                |
+| `TRUST_PROXY`                   | `false`               | Enable trusted-proxy client IP extraction              |
+| `PROXY_HEADER`                  | `X-Forwarded-For`     | Proxy client-IP header                                 |
+| `TRUSTED_PROXIES`               | empty                 | Trusted IPs/CIDRs; required when proxy mode is enabled |
 
 The API applies the canonical `SCHEMA_PATH` file during startup before serving requests. Schema setup is idempotent; a missing or invalid schema stops startup instead of allowing a partially working API to return database errors. Compose also mounts the same schema into PostgreSQL for first-time database initialization.
 
@@ -226,7 +226,7 @@ gofmt -w cmd internal
 go test ./...
 go test -race ./...
 go vet ./...
-go build -o bin/homielab-api ./cmd/server
+go build -o bin/threadman-api ./cmd/server
 ```
 
 The PostgreSQL contention test is opt-in:
@@ -241,8 +241,8 @@ It applies `database/schema.sql` and skips when `TEST_DATABASE_URL` is absent.
 ## Container
 
 ```bash
-docker build -t homielab-api .
-docker run --rm --network host --env-file .env homielab-api
+docker build -t threadman-api .
+docker run --rm --network host --env-file .env threadman-api
 ```
 
 The image contains only the API binary, runs as a non-root user, and uses the same `database/schema.sql` setup described above. `.dockerignore` excludes `.env`, Git metadata, and local artifacts.

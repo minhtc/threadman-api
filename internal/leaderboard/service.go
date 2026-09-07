@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"homielab-api/internal/security"
+	"threadman-api/internal/security"
 )
 
 type Service struct {

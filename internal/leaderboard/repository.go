@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"homielab-api/internal/security"
+	"threadman-api/internal/security"
 )
 
 type Repository interface {

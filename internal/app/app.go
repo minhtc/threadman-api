@@ -8,9 +8,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"homielab-api/internal/config"
-	"homielab-api/internal/httpapi"
-	"homielab-api/internal/leaderboard"
+	"threadman-api/internal/config"
+	"threadman-api/internal/httpapi"
+	"threadman-api/internal/leaderboard"
 )
 
 type Server struct {
