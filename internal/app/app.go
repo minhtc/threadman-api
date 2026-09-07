@@ -26,6 +26,10 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 		stats := pool.Stat()
 		return httpapi.PoolStats{Total: stats.TotalConns(), Acquired: stats.AcquiredConns(), Idle: stats.IdleConns(), Max: stats.MaxConns(), EmptyAcquireWait: stats.EmptyAcquireWaitTime()}
 	}).Register(fiberApp, cfg)
+
+	// Serve static files after API routes so API endpoints keep precedence.
+	registerStaticFiles(fiberApp)
+
 	return &Server{App: fiberApp, service: service}
 }
 

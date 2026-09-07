@@ -15,7 +15,8 @@ A development-stage leaderboard API for Threadman, built with Go 1.27, Fiber v3,
 - UTF-8, control-character, zero-width, timestamp, duration, and score-rate validation.
 - Strict JSON decoding that rejects unknown fields and trailing values.
 - Configurable rate limits, HTTP timeouts, database pool limits, and trusted proxies.
-- Health/readiness probes, request IDs, structured logs, and Prometheus-compatible metrics.
+- `GET /healthz`, `GET /readyz`, and `GET /metrics` for operations.
+- Unmatched web paths are served from `public/` after API route matching.
 
 ## Project layout
 
@@ -28,6 +29,7 @@ A development-stage leaderboard API for Threadman, built with Go 1.27, Fiber v3,
 ├── internal/httpapi/           # Routes, middleware, handlers, probes, metrics
 ├── internal/leaderboard/       # Domain service and PostgreSQL repository
 ├── internal/security/          # AES-256-GCM and validation
+├── public/                     # Static web assets served by the API
 ├── database/schema.sql         # Single canonical development schema
 ├── docker-compose.yml          # Local PostgreSQL + API environment
 ├── Makefile                    # Repeatable development commands
