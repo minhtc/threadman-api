@@ -7,27 +7,63 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"io"
 )
 
+const AES256KeySize = 32
+
 func NewSessionSecret() (string, error) {
-	secret := make([]byte, 16)
-	if _, err := rand.Read(secret); err != nil {
+	secret := make([]byte, AES256KeySize)
+	if _, err := io.ReadFull(rand.Reader, secret); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(secret), nil
 }
 
+func EncryptSecret(masterKey []byte, plaintext string) (string, error) {
+	return encrypt(masterKey, []byte(plaintext))
+}
+
+func DecryptSecret(masterKey []byte, encoded string) (string, error) {
+	plain, err := decrypt(masterKey, encoded)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
+}
+
 func DecryptAESGCM(secretHex, encoded string) ([]byte, error) {
 	key, err := hex.DecodeString(secretHex)
-	if err != nil || len(key) != 16 {
-		return nil, errors.New("invalid session key")
+	if err != nil || len(key) != AES256KeySize {
+		return nil, errors.New("invalid AES-256 session key")
 	}
+	return decrypt(key, encoded)
+}
 
-	data, err := base64.StdEncoding.DecodeString(encoded)
+func encrypt(key []byte, plaintext []byte) (string, error) {
+	if len(key) != AES256KeySize {
+		return "", errors.New("encryption key must be 32 bytes")
+	}
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, errors.New("base64 decoding failed")
+		return "", err
 	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	data := append(nonce, gcm.Seal(nil, nonce, plaintext, nil)...)
+	return base64.StdEncoding.EncodeToString(data), nil
+}
 
+func decrypt(key []byte, encoded string) ([]byte, error) {
+	if len(key) != AES256KeySize {
+		return nil, errors.New("encryption key must be 32 bytes")
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -36,9 +72,12 @@ func DecryptAESGCM(secretHex, encoded string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, errors.New("base64 decoding failed")
+	}
 	if len(data) < gcm.NonceSize()+gcm.Overhead() {
 		return nil, errors.New("payload data truncated")
 	}
-
 	return gcm.Open(nil, data[:gcm.NonceSize()], data[gcm.NonceSize():], nil)
 }

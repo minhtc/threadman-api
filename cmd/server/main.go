@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
 
@@ -17,6 +17,7 @@ import (
 
 func main() {
 	_ = godotenv.Load()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -33,11 +34,11 @@ func main() {
 	defer pool.Close()
 
 	server := app.New(cfg, pool)
-	go server.StartSessionPruner(ctx)
+	go server.StartSessionPruner(ctx, cfg.PruneInterval, cfg.PruneTimeout)
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer shutdownCancel()
 		if err := server.ShutdownWithContext(shutdownCtx); err != nil {
 			log.Printf("server shutdown error: %v", err)

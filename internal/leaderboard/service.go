@@ -3,8 +3,6 @@ package leaderboard
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,38 +10,25 @@ import (
 	"homielab-api/internal/security"
 )
 
-var (
-	ErrTooManySessions = errors.New("too many concurrent active sessions; complete existing games first")
-	ErrSessionUsed     = errors.New("session already used")
-	ErrSessionExpired  = errors.New("session expired")
-	ErrInvalidPayload  = errors.New("invalid score payload")
-)
-
 type Service struct {
-	repo     Repository
-	timezone *time.Location
-	now      func() time.Time
+	repo             Repository
+	timezone         *time.Location
+	now              func() time.Time
+	sessionTTL       time.Duration
+	maxActiveSession int64
 }
 
-func NewService(repo Repository, timezone *time.Location) *Service {
-	return &Service{repo: repo, timezone: timezone, now: time.Now}
+func NewService(repo Repository, timezone *time.Location, sessionTTL time.Duration, maxActiveSessions int64) *Service {
+	return &Service{repo: repo, timezone: timezone, now: time.Now, sessionTTL: sessionTTL, maxActiveSession: maxActiveSessions}
 }
 
 func (s *Service) CreateSession(ctx context.Context, gameCode string, playerID uuid.UUID) (Session, error) {
-	active, err := s.repo.CountActiveSessions(ctx, gameCode, playerID)
-	if err != nil {
-		return Session{}, err
-	}
-	if active >= 5 {
-		return Session{}, ErrTooManySessions
-	}
-
 	secret, err := security.NewSessionSecret()
 	if err != nil {
 		return Session{}, err
 	}
-	session := Session{ID: uuid.New(), PlayerID: playerID, Secret: secret, ExpiresAt: s.now().UTC().Add(10 * time.Minute)}
-	if err := s.repo.CreateSession(ctx, session.ID, gameCode, playerID, secret, session.ExpiresAt); err != nil {
+	session := Session{ID: uuid.New(), PlayerID: playerID, Secret: secret, ExpiresAt: s.now().UTC().Add(s.sessionTTL)}
+	if err := s.repo.CreateSession(ctx, session.ID, gameCode, playerID, secret, session.ExpiresAt, s.maxActiveSession); err != nil {
 		return Session{}, err
 	}
 	return session, nil
@@ -63,19 +48,19 @@ func (s *Service) SubmitScore(ctx context.Context, gameCode string, sessionID uu
 
 	plain, err := security.DecryptAESGCM(session.Secret, encodedPayload)
 	if err != nil {
-		return SubmitResult{}, fmt.Errorf("%w: payload decryption failed", ErrInvalidPayload)
+		return SubmitResult{}, &InvalidPayloadError{Message: "payload decryption failed"}
 	}
 	var payload DecryptedPayload
 	if err := json.Unmarshal(plain, &payload); err != nil {
-		return SubmitResult{}, fmt.Errorf("%w: malformed JSON in payload", ErrInvalidPayload)
+		return SubmitResult{}, &InvalidPayloadError{Message: "malformed JSON in payload"}
 	}
 
 	name, err := security.SanitizePlayerName(payload.PlayerName)
 	if err != nil {
-		return SubmitResult{}, fmt.Errorf("%w: %v", ErrInvalidPayload, err)
+		return SubmitResult{}, &InvalidPayloadError{Message: err.Error()}
 	}
 	if err := security.ValidateScore(payload.Score, payload.DurationMs, payload.Timestamp, s.now()); err != nil {
-		return SubmitResult{}, fmt.Errorf("%w: %v", ErrInvalidPayload, err)
+		return SubmitResult{}, &InvalidPayloadError{Message: err.Error()}
 	}
 
 	scoreDate := s.now().In(s.timezone).Format("2006-01-02")
@@ -84,15 +69,14 @@ func (s *Service) SubmitScore(ctx context.Context, gameCode string, sessionID uu
 		return SubmitResult{}, err
 	}
 
-	rank, err := s.repo.Rank(ctx, gameCode, scoreDate, score.Value, score.CreatedAt, score.ID)
-	if err != nil {
-		return SubmitResult{}, err
+	result := SubmitResult{ScoreDate: scoreDate, Score: score, Top10: make([]LeaderboardEntry, 0)}
+	if rank, rankErr := s.repo.Rank(ctx, gameCode, scoreDate, score.Value, score.CreatedAt, score.ID); rankErr == nil {
+		result.Rank, result.RankAvailable = rank, true
 	}
-	top10, err := s.repo.Top10(ctx, gameCode, scoreDate)
-	if err != nil {
-		return SubmitResult{}, err
+	if top10, topErr := s.repo.Top10(ctx, gameCode, scoreDate); topErr == nil {
+		result.Top10, result.LeaderboardAvailable = top10, true
 	}
-	return SubmitResult{ScoreDate: scoreDate, Score: score, Rank: rank, Top10: top10}, nil
+	return result, nil
 }
 
 func (s *Service) Leaderboard(ctx context.Context, gameCode string) (string, []LeaderboardEntry, error) {
@@ -101,6 +85,4 @@ func (s *Service) Leaderboard(ctx context.Context, gameCode string) (string, []L
 	return date, entries, err
 }
 
-func (s *Service) PruneSessions(ctx context.Context) error {
-	return s.repo.PruneExpiredSessions(ctx)
-}
+func (s *Service) PruneSessions(ctx context.Context) error { return s.repo.PruneExpiredSessions(ctx) }

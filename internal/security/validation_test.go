@@ -1,7 +1,7 @@
 package security
 
 import (
-	"strings"
+	"encoding/hex"
 	"testing"
 	"time"
 )
@@ -18,6 +18,7 @@ func TestSanitizePlayerName(t *testing.T) {
 		{name: "rejects short name", input: "A", wantErr: true},
 		{name: "rejects invisible rune", input: "Pl\u200Bayer", wantErr: true},
 		{name: "rejects control rune", input: "Play\ner", wantErr: true},
+		{name: "rejects trailing control rune", input: "Player\n", wantErr: true},
 		{name: "rejects invalid UTF-8", input: string([]byte{'P', 0xff, 'r', 'o'}), wantErr: true},
 	}
 
@@ -61,12 +62,28 @@ func TestValidateScore(t *testing.T) {
 	}
 }
 
-func TestNewSessionSecret(t *testing.T) {
+func TestSessionSecretDecryptsAES256Payload(t *testing.T) {
 	secret, err := NewSessionSecret()
 	if err != nil {
 		t.Fatalf("NewSessionSecret() error = %v", err)
 	}
-	if len(secret) != 32 || strings.Trim(secret, "0123456789abcdef") != "" {
-		t.Fatalf("NewSessionSecret() = %q, want 32 lowercase hex characters", secret)
+	encoded, err := mustEncryptSessionPayload(secret, []byte("score payload"))
+	if err != nil {
+		t.Fatalf("encrypt payload error = %v", err)
 	}
+	plain, err := DecryptAESGCM(secret, encoded)
+	if err != nil {
+		t.Fatalf("DecryptAESGCM() error = %v", err)
+	}
+	if string(plain) != "score payload" {
+		t.Fatalf("DecryptAESGCM() = %q", plain)
+	}
+}
+
+func mustEncryptSessionPayload(secret string, plaintext []byte) (string, error) {
+	key, err := hex.DecodeString(secret)
+	if err != nil {
+		return "", err
+	}
+	return encrypt(key, plaintext)
 }

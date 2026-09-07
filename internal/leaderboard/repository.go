@@ -3,21 +3,18 @@ package leaderboard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-)
 
-var (
-	ErrNotFound           = errors.New("not found")
-	ErrSessionUnavailable = errors.New("session unavailable")
+	"homielab-api/internal/security"
 )
 
 type Repository interface {
-	CountActiveSessions(ctx context.Context, gameCode string, playerID uuid.UUID) (int64, error)
-	CreateSession(ctx context.Context, sessionID uuid.UUID, gameCode string, playerID uuid.UUID, secret string, expiresAt time.Time) error
+	CreateSession(ctx context.Context, sessionID uuid.UUID, gameCode string, playerID uuid.UUID, secret string, expiresAt time.Time, maxActive int64) error
 	FindSession(ctx context.Context, gameCode string, sessionID uuid.UUID) (Session, error)
 	ConsumeAndCreateScore(ctx context.Context, gameCode, scoreDate, name string, sessionID, playerID uuid.UUID, score int64, durationMS int) (Score, error)
 	Rank(ctx context.Context, gameCode, scoreDate string, score int64, createdAt time.Time, scoreID int64) (int64, error)
@@ -25,26 +22,57 @@ type Repository interface {
 	PruneExpiredSessions(ctx context.Context) error
 }
 
-type PostgresRepository struct{ DB *pgxpool.Pool }
-
-func (r *PostgresRepository) CountActiveSessions(ctx context.Context, gameCode string, playerID uuid.UUID) (int64, error) {
-	var count int64
-	err := r.DB.QueryRow(ctx, `SELECT COUNT(*) FROM game_sessions WHERE game_code = $1 AND player_id = $2 AND submitted_at IS NULL AND expires_at > NOW()`, gameCode, playerID).Scan(&count)
-	return count, err
+type PostgresRepository struct {
+	DB        *pgxpool.Pool
+	SecretKey []byte
 }
 
-func (r *PostgresRepository) CreateSession(ctx context.Context, sessionID uuid.UUID, gameCode string, playerID uuid.UUID, secret string, expiresAt time.Time) error {
-	_, err := r.DB.Exec(ctx, `INSERT INTO game_sessions (id, game_code, player_id, session_secret, expires_at) VALUES ($1, $2, $3, $4, $5)`, sessionID, gameCode, playerID, secret, expiresAt)
-	return err
+func (r *PostgresRepository) CreateSession(ctx context.Context, sessionID uuid.UUID, gameCode string, playerID uuid.UUID, secret string, expiresAt time.Time, maxActive int64) error {
+	encryptedSecret, err := security.EncryptSecret(r.SecretKey, secret)
+	if err != nil {
+		return fmt.Errorf("encrypt session secret: %w", err)
+	}
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	lockKey := gameCode + ":" + playerID.String()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return err
+	}
+
+	var active int64
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM game_sessions WHERE game_code = $1 AND player_id = $2 AND submitted_at IS NULL AND expires_at > NOW()`, gameCode, playerID).Scan(&active); err != nil {
+		return err
+	}
+	if active >= maxActive {
+		return ErrTooManySessions
+	}
+
+	if _, err := tx.Exec(ctx, `INSERT INTO game_sessions (id, game_code, player_id, session_secret, expires_at) VALUES ($1, $2, $3, $4, $5)`, sessionID, gameCode, playerID, encryptedSecret, expiresAt); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) FindSession(ctx context.Context, gameCode string, sessionID uuid.UUID) (Session, error) {
 	var session Session
-	err := r.DB.QueryRow(ctx, `SELECT id, player_id, session_secret, expires_at, submitted_at FROM game_sessions WHERE id = $1 AND game_code = $2`, sessionID, gameCode).Scan(&session.ID, &session.PlayerID, &session.Secret, &session.ExpiresAt, &session.SubmittedAt)
+	var encryptedSecret string
+	err := r.DB.QueryRow(ctx, `SELECT id, player_id, session_secret, expires_at, submitted_at FROM game_sessions WHERE id = $1 AND game_code = $2`, sessionID, gameCode).Scan(&session.ID, &session.PlayerID, &encryptedSecret, &session.ExpiresAt, &session.SubmittedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
-	return session, err
+	if err != nil {
+		return Session{}, err
+	}
+	session.Secret, err = security.DecryptSecret(r.SecretKey, encryptedSecret)
+	if err != nil {
+		return Session{}, fmt.Errorf("decrypt session secret: %w", err)
+	}
+	return session, nil
 }
 
 func (r *PostgresRepository) ConsumeAndCreateScore(ctx context.Context, gameCode, scoreDate, name string, sessionID, playerID uuid.UUID, score int64, durationMS int) (Score, error) {

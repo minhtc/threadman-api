@@ -35,10 +35,16 @@ func ValidateScore(score int64, durationMS int, timestamp int64, now time.Time) 
 }
 
 func SanitizePlayerName(raw string) (string, error) {
-	name := strings.TrimSpace(raw)
-	if !utf8.ValidString(name) {
+	if !utf8.ValidString(raw) {
 		return "", errors.New("player name must be valid UTF-8")
 	}
+	for _, r := range raw {
+		if unicode.IsControl(r) || invisibleRunes[r] {
+			return "", errors.New("player name contains forbidden invisible or control characters")
+		}
+	}
+
+	name := strings.TrimSpace(raw)
 	length := utf8.RuneCountInString(name)
 	if length < 2 || length > 24 {
 		return "", errors.New("player name must be between 2 and 24 characters")

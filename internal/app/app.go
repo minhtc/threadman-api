@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -19,23 +19,27 @@ type Server struct {
 }
 
 func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
-	service := leaderboard.NewService(&leaderboard.PostgresRepository{DB: pool}, cfg.Timezone)
-	fiberApp := fiber.New(fiber.Config{AppName: "Threadman Leaderboard API", BodyLimit: 4 * 1024})
-	httpapi.NewHandler(service).Register(fiberApp, cfg)
+	repo := &leaderboard.PostgresRepository{DB: pool, SecretKey: cfg.SessionSecretKey}
+	service := leaderboard.NewService(repo, cfg.Timezone, cfg.SessionTTL, cfg.MaxActiveSessions)
+	fiberApp := fiber.New(fiber.Config{AppName: "Threadman Leaderboard API", BodyLimit: cfg.BodyLimit, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, TrustProxy: cfg.TrustProxy, ProxyHeader: cfg.ProxyHeader, TrustProxyConfig: fiber.TrustProxyConfig{Proxies: cfg.TrustedProxies}})
+	httpapi.NewHandler(service, pool.Ping, func() httpapi.PoolStats {
+		stats := pool.Stat()
+		return httpapi.PoolStats{Total: stats.TotalConns(), Acquired: stats.AcquiredConns(), Idle: stats.IdleConns(), Max: stats.MaxConns(), EmptyAcquireWait: stats.EmptyAcquireWaitTime()}
+	}).Register(fiberApp, cfg)
 	return &Server{App: fiberApp, service: service}
 }
 
-func (s *Server) StartSessionPruner(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Minute)
+func (s *Server) StartSessionPruner(ctx context.Context, interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			pruneCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			pruneCtx, cancel := context.WithTimeout(context.Background(), timeout)
 			if err := s.service.PruneSessions(pruneCtx); err != nil {
-				log.Printf("session pruning worker error: %v", err)
+				slog.Default().Error("session_pruning_failed", "error", err)
 			}
 			cancel()
 		}

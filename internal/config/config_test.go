@@ -7,6 +7,7 @@ func TestLoadDefaultsAndOrigins(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("LEADERBOARD_TIMEZONE", "UTC")
 	t.Setenv("ALLOWED_ORIGINS", " https://example.com/,https://game.example.com ")
+	t.Setenv("SESSION_SECRET_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 
 	cfg, err := Load()
 	if err != nil {
@@ -22,7 +23,32 @@ func TestLoadDefaultsAndOrigins(t *testing.T) {
 
 func TestLoadRequiresDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
+	t.Setenv("SESSION_SECRET_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() succeeded without DATABASE_URL")
+	}
+}
+
+func TestLoadAcceptsWildcardOrigin(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("SESSION_SECRET_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("ALLOWED_ORIGINS", "*")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != "*" {
+		t.Fatalf("AllowedOrigins = %#v, want wildcard", cfg.AllowedOrigins)
+	}
+}
+
+func TestLoadRejectsInvalidTrustedProxy(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("SESSION_SECRET_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("TRUST_PROXY", "true")
+	t.Setenv("TRUSTED_PROXIES", "not-an-ip")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted an invalid trusted proxy")
 	}
 }

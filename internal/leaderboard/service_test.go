@@ -14,12 +14,11 @@ type serviceRepository struct {
 	activeSessions   int64
 }
 
-func (r *serviceRepository) CountActiveSessions(context.Context, string, uuid.UUID) (int64, error) {
-	return r.activeSessions, nil
-}
-func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID, _ string, _ uuid.UUID, _ string, _ time.Time) error {
-	r.createdSessionID = sessionID
-	r.createdSession = true
+func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID, _ string, _ uuid.UUID, _ string, _ time.Time, max int64) error {
+	if r.activeSessions >= max {
+		return ErrTooManySessions
+	}
+	r.createdSessionID, r.createdSession = sessionID, true
 	return nil
 }
 func (r *serviceRepository) FindSession(context.Context, string, uuid.UUID) (Session, error) {
@@ -38,24 +37,19 @@ func (r *serviceRepository) PruneExpiredSessions(context.Context) error { return
 
 func TestCreateSessionPersistsReturnedID(t *testing.T) {
 	repo := &serviceRepository{}
-	service := NewService(repo, time.UTC)
-
+	service := NewService(repo, time.UTC, 10*time.Minute, 5)
 	session, err := service.CreateSession(context.Background(), GameThreadman, uuid.New())
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
-	if !repo.createdSession {
-		t.Fatal("CreateSession() did not call repository")
-	}
-	if session.ID != repo.createdSessionID {
+	if !repo.createdSession || session.ID != repo.createdSessionID {
 		t.Fatalf("returned session ID %s differs from persisted ID %s", session.ID, repo.createdSessionID)
 	}
 }
 
 func TestCreateSessionRejectsTooManyActiveSessions(t *testing.T) {
 	repo := &serviceRepository{activeSessions: 5}
-	service := NewService(repo, time.UTC)
-
+	service := NewService(repo, time.UTC, 10*time.Minute, 5)
 	_, err := service.CreateSession(context.Background(), GameThreadman, uuid.New())
 	if err != ErrTooManySessions {
 		t.Fatalf("CreateSession() error = %v, want %v", err, ErrTooManySessions)

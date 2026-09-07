@@ -40,8 +40,10 @@ type Score struct {
 }
 
 type SubmitResult struct {
-	ScoreDate string
-	Score     Score
-	Rank      int64
-	Top10     []LeaderboardEntry
+	ScoreDate            string
+	Score                Score
+	Rank                 int64
+	RankAvailable        bool
+	Top10                []LeaderboardEntry
+	LeaderboardAvailable bool
 }
