@@ -76,11 +76,10 @@ set -a
 source .env
 set +a
 
-psql "$DATABASE_URL" -f database/schema.sql
 go run ./cmd/server
 ```
 
-The API listens on `:8080` by default. `.env` is loaded automatically when present. `DATABASE_URL` and `SESSION_SECRET_ENCRYPTION_KEY` are required. The encryption key protects session secrets stored in PostgreSQL and is never sent to clients.
+The server applies `database/schema.sql` automatically during startup, so the `psql` command is optional. The API listens on `:8080` by default. `.env` is loaded automatically when present. `DATABASE_URL` and `SESSION_SECRET_ENCRYPTION_KEY` are required. The encryption key protects session secrets stored in PostgreSQL and is never sent to clients.
 
 This project is not deployed yet, so `database/schema.sql` is intentionally the single source of truth for database setup. If the schema changes during development, update this file and reapply it to a fresh development database.
 
@@ -90,6 +89,7 @@ This project is not deployed yet, so `database/schema.sql` is intentionally the 
 | ------------------------------- | ----------------- | ------------------------------------------------------ |
 | `PORT`                          | `8080`            | HTTP listen port, `1`–`65535`                          |
 | `DATABASE_URL`                  | required          | PostgreSQL connection URL                              |
+| `SCHEMA_PATH`                   | `database/schema.sql` | Canonical schema applied during startup             |
 | `SESSION_SECRET_ENCRYPTION_KEY` | required          | Base64-encoded 32-byte key for secrets at rest         |
 | `LEADERBOARD_TIMEZONE`          | `UTC`             | IANA timezone for `score_date`                         |
 | `ALLOWED_ORIGINS`               | `*`               | Comma-separated `http`/`https` origins                 |
@@ -116,7 +116,7 @@ This project is not deployed yet, so `database/schema.sql` is intentionally the 
 | `PROXY_HEADER`                  | `X-Forwarded-For` | Proxy client-IP header                                 |
 | `TRUSTED_PROXIES`               | empty             | Trusted IPs/CIDRs; required when proxy mode is enabled |
 
-Never enable `TRUST_PROXY` without a restricted `TRUSTED_PROXIES` list. Set explicit CORS origins outside local development.
+The API applies the canonical `SCHEMA_PATH` file during startup before serving requests. Schema setup is idempotent; a missing or invalid schema stops startup instead of allowing a partially working API to return database errors. Compose also mounts the same schema into PostgreSQL for first-time database initialization.
 
 ## API
 

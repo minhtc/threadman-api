@@ -18,6 +18,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 WORKDIR /app
 COPY --from=builder /out/homielab-api /app/homielab-api
+COPY database/schema.sql /app/database/schema.sql
 COPY public /app/public
 
 USER appuser

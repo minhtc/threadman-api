@@ -33,6 +33,13 @@ func main() {
 	}
 	defer pool.Close()
 
+	schemaCtx, schemaCancel := context.WithTimeout(ctx, cfg.DBConnectTimeout)
+	if err := database.InitializeSchema(schemaCtx, pool, cfg.SchemaPath); err != nil {
+		schemaCancel()
+		log.Fatal(err)
+	}
+	schemaCancel()
+
 	server := app.New(cfg, pool)
 	go server.StartSessionPruner(ctx, cfg.PruneInterval, cfg.PruneTimeout)
 

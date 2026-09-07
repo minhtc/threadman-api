@@ -42,6 +42,7 @@ type Config struct {
 	TrustProxy              bool
 	ProxyHeader             string
 	TrustedProxies          []string
+	SchemaPath              string
 }
 
 func Load() (*Config, error) {
@@ -85,6 +86,7 @@ func Load() (*Config, error) {
 		Port: port, DatabaseURL: databaseURL, Timezone: timezone, AllowedOrigins: origins,
 		SessionSecretKey: secretKey, TrustProxy: trustProxy,
 		ProxyHeader: getenv("PROXY_HEADER", "X-Forwarded-For"), TrustedProxies: trustedProxies,
+		SchemaPath: getenv("SCHEMA_PATH", "database/schema.sql"),
 		SessionTTL: 10 * time.Minute, PruneInterval: 15 * time.Minute, MaxActiveSessions: 5,
 		SessionRateLimit: 20, ScoreRateLimit: 10, LeaderboardRateLimit: 60, RateLimitWindow: time.Minute,
 		BodyLimit: 4 * 1024, RequestTimeout: 3 * time.Second, ReadinessTimeout: 2 * time.Second, PruneTimeout: 5 * time.Second,
