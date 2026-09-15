@@ -199,12 +199,16 @@ func parseOrigins(raw string) ([]string, error) {
 	for _, origin := range values {
 		origin = strings.TrimRight(origin, "/")
 		parsed, err := url.Parse(origin)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		if err != nil || !isAllowedOriginScheme(parsed.Scheme) || parsed.Host == "" {
 			return nil, fmt.Errorf("ALLOWED_ORIGINS contains invalid origin %q", origin)
 		}
 		origins = append(origins, origin)
 	}
 	return origins, nil
+}
+
+func isAllowedOriginScheme(scheme string) bool {
+	return scheme == "http" || scheme == "https" || scheme == "capacitor"
 }
 
 func parseTrustedProxies(raw string) ([]string, error) {
