@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,7 +20,7 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		fatal("config_load_failed", err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -29,14 +28,14 @@ func main() {
 
 	pool, err := database.Open(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		fatal("database_open_failed", err)
 	}
 	defer pool.Close()
 
 	schemaCtx, schemaCancel := context.WithTimeout(ctx, cfg.DBConnectTimeout)
 	if err := database.InitializeSchema(schemaCtx, pool, cfg.SchemaPath); err != nil {
 		schemaCancel()
-		log.Fatal(err)
+		fatal("schema_init_failed", err)
 	}
 	schemaCancel()
 
@@ -48,12 +47,17 @@ func main() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer shutdownCancel()
 		if err := server.ShutdownWithContext(shutdownCtx); err != nil {
-			log.Printf("server shutdown error: %v", err)
+			slog.Error("server_shutdown_failed", "error", err)
 		}
 	}()
 
-	log.Printf("starting server on :%s (timezone: %s, origins: %v)", cfg.Port, cfg.Timezone, cfg.AllowedOrigins)
+	slog.Info("server_starting", "port", cfg.Port, "timezone", cfg.Timezone.String(), "origins", cfg.AllowedOrigins)
 	if err := server.Listen(":" + cfg.Port); err != nil && ctx.Err() == nil {
-		log.Fatal(err)
+		fatal("server_listen_failed", err)
 	}
+}
+
+func fatal(msg string, err error) {
+	slog.Error(msg, "error", err)
+	os.Exit(1)
 }

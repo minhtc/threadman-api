@@ -89,6 +89,16 @@
       button:hover {
         border-color: #aaa;
       }
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+      button.nav-day {
+        width: 38px;
+        padding: 0;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
       .top-player {
         position: relative;
         overflow: hidden;
@@ -192,6 +202,14 @@
         .controls button {
           align-self: end;
         }
+        .controls .nav-day {
+          flex: 0 0 38px;
+          align-self: stretch;
+        }
+        .controls #date {
+          flex: 1;
+          min-width: 0;
+        }
       }
     </style>
   </head>
@@ -208,7 +226,25 @@
               <option value="threadman">Threadman</option>
             </select></label
           >
+          <button
+            id="prev-day"
+            class="nav-day"
+            type="button"
+            title="Previous day"
+            aria-label="Previous day"
+          >
+            ‹
+          </button>
           <label><input id="date" type="date" /></label>
+          <button
+            id="next-day"
+            class="nav-day"
+            type="button"
+            title="Next day"
+            aria-label="Next day"
+          >
+            ›
+          </button>
           <button id="load" type="button">View</button>
         </div>
       </header>
@@ -232,6 +268,8 @@
       const game = document.querySelector("#game");
       const date = document.querySelector("#date");
       const load = document.querySelector("#load");
+      const prevDay = document.querySelector("#prev-day");
+      const nextDay = document.querySelector("#next-day");
       const topName = document.querySelector("#top-name");
       const topScore = document.querySelector("#top-score");
       const scores = document.querySelector("#scores");
@@ -241,6 +279,34 @@
       const today = new Date().toLocaleDateString("en-CA");
       date.value = today;
       date.max = today;
+
+      function parseDate(value) {
+        const [year, month, day] = value.split("-").map(Number);
+        return new Date(year, month - 1, day);
+      }
+
+      function formatDate(value) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, "0");
+        const day = String(value.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function shiftDate(offsetDays) {
+        if (!date.value) date.value = today;
+        const next = parseDate(date.value);
+        next.setDate(next.getDate() + offsetDays);
+        const formatted = formatDate(next);
+        if (formatted > today) return;
+        date.value = formatted;
+        updateNavState();
+        fetchLeaderboard();
+      }
+
+      function updateNavState() {
+        nextDay.disabled = !date.value || date.value >= today;
+        prevDay.disabled = !date.value;
+      }
 
       function render(entries) {
         const top = entries[0];
@@ -286,7 +352,13 @@
       }
 
       load.addEventListener("click", fetchLeaderboard);
-      date.addEventListener("change", fetchLeaderboard);
+      date.addEventListener("change", () => {
+        updateNavState();
+        fetchLeaderboard();
+      });
+      prevDay.addEventListener("click", () => shiftDate(-1));
+      nextDay.addEventListener("click", () => shiftDate(1));
+      updateNavState();
       fetchLeaderboard();
     </script>
   </body>

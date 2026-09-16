@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -22,6 +21,9 @@ import (
 	"threadman-api/internal/leaderboard"
 )
 
+// dateTimeLayout is the canonical calendar-day format used by leaderboard dates.
+const dateTimeLayout = "2006-01-02"
+
 type Handler struct {
 	service          *leaderboard.Service
 	ready            func(context.Context) error
@@ -31,24 +33,67 @@ type Handler struct {
 	metrics          *Metrics
 }
 
+type createSessionRequest struct {
+	PlayerID string `json:"player_id"`
+}
+
+type submitScoreRequest struct {
+	SessionID string `json:"session_id"`
+	Payload   string `json:"payload"`
+}
+
+// NewHandler builds the HTTP layer. Timeouts are applied by Register from config.
 func NewHandler(service *leaderboard.Service, ready func(context.Context) error, poolStats func() PoolStats) *Handler {
-	return &Handler{service: service, ready: ready, poolStats: poolStats, requestTimeout: 3 * time.Second, readinessTimeout: 2 * time.Second, metrics: &Metrics{}}
+	return &Handler{
+		service:   service,
+		ready:     ready,
+		poolStats: poolStats,
+		metrics:   &Metrics{},
+	}
 }
 
 func (h *Handler) Register(app *fiber.App, cfg *config.Config) {
 	h.requestTimeout = cfg.RequestTimeout
 	h.readinessTimeout = cfg.ReadinessTimeout
-	app.Use(recover.New(), requestid.New(), h.requestLogger)
-	app.Use(cors.New(cors.Config{AllowOrigins: cfg.AllowedOrigins, AllowMethods: []string{"GET", "POST", "OPTIONS"}, AllowHeaders: []string{"Content-Type", "X-Request-ID"}}))
+
+	app.Use(
+		recover.New(),
+		requestid.New(),
+		h.requestLogger,
+		cors.New(cors.Config{
+			AllowOrigins: cfg.AllowedOrigins,
+			AllowMethods: []string{"GET", "POST", "OPTIONS"},
+			AllowHeaders: []string{"Content-Type", "X-Request-ID"},
+		}),
+	)
 
 	app.Get("/healthz", h.health)
 	app.Get("/readyz", h.readyz)
 	app.Get("/metrics", h.metricsHandler)
 
 	api := app.Group("/v1/game/:gameCode", validateGame)
-	api.Post("/session", enforceJSON, limiter.New(limiter.Config{Max: cfg.SessionRateLimit, Expiration: cfg.RateLimitWindow}), h.createSession)
-	api.Post("/score", enforceJSON, limiter.New(limiter.Config{Max: cfg.ScoreRateLimit, Expiration: cfg.RateLimitWindow}), h.submitScore)
-	api.Get("/leaderboard", limiter.New(limiter.Config{Max: cfg.LeaderboardRateLimit, Expiration: cfg.RateLimitWindow}), h.getLeaderboard)
+	api.Post("/session",
+		enforceJSON,
+		newRateLimiter(cfg.SessionRateLimit, cfg.RateLimitWindow),
+		h.createSession,
+	)
+	api.Post("/score",
+		enforceJSON,
+		newRateLimiter(cfg.ScoreRateLimit, cfg.RateLimitWindow),
+		h.submitScore,
+	)
+	api.Get("/leaderboard",
+		newRateLimiter(cfg.LeaderboardRateLimit, cfg.RateLimitWindow),
+		h.getLeaderboard,
+	)
+}
+
+func newRateLimiter(max int, window time.Duration) fiber.Handler {
+	return limiter.New(limiter.Config{Max: max, Expiration: window})
+}
+
+func (h *Handler) withRequestTimeout(c fiber.Ctx) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(c.Context(), h.requestTimeout)
 }
 
 func validateGame(c fiber.Ctx) error {
@@ -74,7 +119,7 @@ func decodeJSON(c fiber.Ctx, destination any) error {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("request body must contain one JSON object")
+		return errors.New("request body must contain one JSON object")
 	}
 	return nil
 }
@@ -83,38 +128,47 @@ func (h *Handler) requestLogger(c fiber.Ctx) error {
 	started := time.Now()
 	err := c.Next()
 	h.metrics.requests.Add(1)
-	slog.Default().Info("http_request", "request_id", requestID(c), "method", c.Method(), "path", c.Path(), "status", c.Response().StatusCode(), "duration_ms", time.Since(started).Milliseconds(), "ip", c.IP())
+	slog.Info("http_request",
+		"request_id", requestID(c),
+		"method", c.Method(),
+		"path", c.Path(),
+		"status", c.Response().StatusCode(),
+		"duration_ms", time.Since(started).Milliseconds(),
+		"ip", c.IP(),
+	)
 	return err
 }
 
 func (h *Handler) createSession(c fiber.Ctx) error {
 	var req createSessionRequest
-	if err := decodeJSON(c, &req); err != nil || req.PlayerID == "" {
-		return jsonError(c, fiber.StatusBadRequest, "player_id is required and no unknown fields are allowed")
+	if err := decodeJSON(c, &req); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "request body must be a single JSON object without unknown fields")
+	}
+	if req.PlayerID == "" {
+		return jsonError(c, fiber.StatusBadRequest, "player_id is required")
 	}
 	playerID, err := uuid.Parse(req.PlayerID)
 	if err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "player_id must be a valid UUID")
 	}
-	ctx, cancel := context.WithTimeout(c.Context(), h.requestTimeout)
+
+	ctx, cancel := h.withRequestTimeout(c)
 	defer cancel()
+
 	session, err := h.service.CreateSession(ctx, c.Params("gameCode"), playerID)
 	if err != nil {
 		if errors.Is(err, leaderboard.ErrTooManySessions) {
 			return jsonError(c, fiber.StatusTooManyRequests, err.Error())
 		}
-		slog.Default().Error("create_session_failed", "request_id", requestID(c), "error", err)
+		slog.Error("create_session_failed", "request_id", requestID(c), "error", err)
 		return jsonError(c, fiber.StatusInternalServerError, "session database error")
 	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"session_id": session.ID.String(), "session_secret": session.Secret, "expires_at": session.ExpiresAt.Format(time.RFC3339)})
-}
 
-type createSessionRequest struct {
-	PlayerID string `json:"player_id"`
-}
-type submitScoreRequest struct {
-	SessionID string `json:"session_id"`
-	Payload   string `json:"payload"`
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"session_id":     session.ID.String(),
+		"session_secret": session.Secret,
+		"expires_at":     session.ExpiresAt.Format(time.RFC3339),
+	})
 }
 
 func requestID(c fiber.Ctx) string {

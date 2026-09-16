@@ -9,6 +9,19 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	// MaxTimestampDriftSeconds bounds how far a client timestamp may differ from server time.
+	MaxTimestampDriftSeconds = 120
+	// MinDurationMS / MaxDurationMS bound a plausible single game session.
+	MinDurationMS = 3000
+	MaxDurationMS = 3600000
+	// MaxScorePointsPerSecond is the upper bound used to reject fabricated scores.
+	MaxScorePointsPerSecond = 200
+	// MinNameRunes / MaxNameRunes bound the displayed player name.
+	MinNameRunes = 2
+	MaxNameRunes = 24
+)
+
 var invisibleRunes = map[rune]bool{
 	'\u200B': true, '\u200C': true, '\u200D': true, '\u200E': true, '\u200F': true,
 	'\u2028': true, '\u2029': true, '\u202A': true, '\u202B': true, '\u202C': true,
@@ -17,17 +30,17 @@ var invisibleRunes = map[rune]bool{
 
 func ValidateScore(score int64, durationMS int, timestamp int64, now time.Time) error {
 	drift := now.Unix() - timestamp
-	if drift < -120 || drift > 120 {
+	if drift < -MaxTimestampDriftSeconds || drift > MaxTimestampDriftSeconds {
 		return errors.New("timestamp drift excessive; check device time")
 	}
 	if score < 0 {
 		return errors.New("score cannot be negative")
 	}
-	if durationMS < 3000 || durationMS > 3600000 {
+	if durationMS < MinDurationMS || durationMS > MaxDurationMS {
 		return errors.New("invalid game duration")
 	}
 
-	maxAllowed := int64(durationMS/1000) * 200
+	maxAllowed := int64(durationMS/1000) * MaxScorePointsPerSecond
 	if score > maxAllowed {
 		return fmt.Errorf("score anomaly: %d exceeds maximum theoretical rate (%d)", score, maxAllowed)
 	}
@@ -44,15 +57,10 @@ func SanitizePlayerName(raw string) (string, error) {
 		}
 	}
 
+	// TrimSpace only removes outer space; remaining runes already passed the checks above.
 	name := strings.TrimSpace(raw)
-	length := utf8.RuneCountInString(name)
-	if length < 2 || length > 24 {
-		return "", errors.New("player name must be between 2 and 24 characters")
-	}
-	for _, r := range name {
-		if unicode.IsControl(r) || !utf8.ValidRune(r) || invisibleRunes[r] {
-			return "", errors.New("player name contains forbidden invisible or control characters")
-		}
+	if length := utf8.RuneCountInString(name); length < MinNameRunes || length > MaxNameRunes {
+		return "", fmt.Errorf("player name must be between %d and %d characters", MinNameRunes, MaxNameRunes)
 	}
 	return name, nil
 }

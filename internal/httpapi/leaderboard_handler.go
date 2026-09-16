@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
@@ -11,18 +10,24 @@ import (
 func (h *Handler) getLeaderboard(c fiber.Ctx) error {
 	requestedDate := c.Query("date")
 	if requestedDate != "" {
-		parsed, err := time.Parse("2006-01-02", requestedDate)
-		if err != nil || parsed.Format("2006-01-02") != requestedDate {
+		parsed, err := time.Parse(dateTimeLayout, requestedDate)
+		if err != nil || parsed.Format(dateTimeLayout) != requestedDate {
 			return jsonError(c, fiber.StatusBadRequest, "date must use YYYY-MM-DD format")
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(c.Context(), h.requestTimeout)
+	ctx, cancel := h.withRequestTimeout(c)
 	defer cancel()
+
 	date, top10, err := h.service.Leaderboard(ctx, c.Params("gameCode"), requestedDate)
 	if err != nil {
-		slog.Default().Error("get_leaderboard_failed", "request_id", requestID(c), "error", err)
+		slog.Error("get_leaderboard_failed", "request_id", requestID(c), "error", err)
 		return jsonError(c, fiber.StatusInternalServerError, "failed to fetch leaderboard")
 	}
-	return c.JSON(fiber.Map{"game_code": c.Params("gameCode"), "score_date": date, "top10": top10})
+
+	return c.JSON(fiber.Map{
+		"game_code":  c.Params("gameCode"),
+		"score_date": date,
+		"top10":      top10,
+	})
 }
