@@ -110,6 +110,10 @@ func (s *Service) Leaderboard(ctx context.Context, gameCode, requestedDate strin
 	return date, entries, err
 }
 
+func (s *Service) AllTimeLeaderboard(ctx context.Context, gameCode string) ([]LeaderboardEntry, error) {
+	return s.repo.Top10AllTime(ctx, gameCode)
+}
+
 func (s *Service) PruneSessions(ctx context.Context) error {
 	return s.repo.PruneExpiredSessions(ctx)
 }

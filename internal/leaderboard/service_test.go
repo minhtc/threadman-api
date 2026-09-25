@@ -13,6 +13,7 @@ type serviceRepository struct {
 	createdSession   bool
 	activeSessions   int64
 	top10Date        string
+	allTimeGames     []string
 }
 
 func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID, _ string, _ uuid.UUID, _ string, _ time.Time, max int64) error {
@@ -40,6 +41,11 @@ func (r *serviceRepository) Top10(_ context.Context, _, date string) ([]Leaderbo
 	return nil, nil
 }
 
+func (r *serviceRepository) Top10AllTime(_ context.Context, gameCode string) ([]LeaderboardEntry, error) {
+	r.allTimeGames = append(r.allTimeGames, gameCode)
+	return []LeaderboardEntry{{Rank: 1, PlayerName: "Ace", Score: 3200}}, nil
+}
+
 func (r *serviceRepository) PruneExpiredSessions(context.Context) error { return nil }
 
 func TestLeaderboardUsesRequestedDate(t *testing.T) {
@@ -52,6 +58,25 @@ func TestLeaderboardUsesRequestedDate(t *testing.T) {
 	}
 	if date != "2025-01-15" || repo.top10Date != "2025-01-15" {
 		t.Fatalf("Leaderboard() date = %q, repository date = %q", date, repo.top10Date)
+	}
+}
+
+func TestAllTimeLeaderboardIgnoresDate(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.UTC, 10*time.Minute, 5)
+
+	entries, err := service.AllTimeLeaderboard(context.Background(), GameThreadman)
+	if err != nil {
+		t.Fatalf("AllTimeLeaderboard() error = %v", err)
+	}
+	if repo.top10Date != "" {
+		t.Fatalf("all-time lookup passed date %q to the repository", repo.top10Date)
+	}
+	if len(repo.allTimeGames) != 1 || repo.allTimeGames[0] != GameThreadman {
+		t.Fatalf("allTimeGames = %v, want [%s]", repo.allTimeGames, GameThreadman)
+	}
+	if len(entries) != 1 || entries[0].Rank != 1 || entries[0].PlayerName != "Ace" {
+		t.Fatalf("AllTimeLeaderboard() entries = %+v", entries)
 	}
 }
 

@@ -19,6 +19,7 @@ type Repository interface {
 	ConsumeAndCreateScore(ctx context.Context, gameCode, scoreDate, name string, sessionID, playerID uuid.UUID, score int64, durationMS int) (Score, error)
 	Rank(ctx context.Context, gameCode, scoreDate string, score int64, createdAt time.Time, scoreID int64) (int64, error)
 	Top10(ctx context.Context, gameCode, scoreDate string) ([]LeaderboardEntry, error)
+	Top10AllTime(ctx context.Context, gameCode string) ([]LeaderboardEntry, error)
 	PruneExpiredSessions(ctx context.Context) error
 }
 
@@ -36,6 +37,7 @@ const (
 	insertScoreSQL          = `INSERT INTO game_scores (session_id, game_code, player_id, player_name, score, duration_ms, score_date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`
 	rankSQL                 = `SELECT COUNT(*) + 1 FROM game_scores WHERE game_code = $1 AND score_date = $2 AND (score > $3 OR (score = $3 AND (created_at < $4 OR (created_at = $4 AND id < $5))))`
 	top10SQL                = `SELECT player_name, score FROM game_scores WHERE game_code = $1 AND score_date = $2 ORDER BY score DESC, created_at ASC, id ASC LIMIT 10`
+	top10AllTimeSQL         = `SELECT player_name, score FROM game_scores WHERE game_code = $1 ORDER BY score DESC, created_at ASC, id ASC LIMIT 10`
 	pruneExpiredSessionsSQL = `DELETE FROM game_sessions WHERE expires_at < NOW() - INTERVAL '24 hours' AND submitted_at IS NULL`
 )
 
@@ -128,7 +130,15 @@ func (r *PostgresRepository) Rank(ctx context.Context, gameCode, scoreDate strin
 }
 
 func (r *PostgresRepository) Top10(ctx context.Context, gameCode, scoreDate string) ([]LeaderboardEntry, error) {
-	rows, err := r.DB.Query(ctx, top10SQL, gameCode, scoreDate)
+	return r.queryTop10(ctx, top10SQL, gameCode, scoreDate)
+}
+
+func (r *PostgresRepository) Top10AllTime(ctx context.Context, gameCode string) ([]LeaderboardEntry, error) {
+	return r.queryTop10(ctx, top10AllTimeSQL, gameCode)
+}
+
+func (r *PostgresRepository) queryTop10(ctx context.Context, query string, args ...any) ([]LeaderboardEntry, error) {
+	rows, err := r.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

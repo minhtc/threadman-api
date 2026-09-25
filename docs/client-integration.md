@@ -1,6 +1,6 @@
 # Client Integration Guide
 
-This guide explains how a web, mobile, Godot, Unity, or other game client integrates with the Threadman Leaderboard API.
+This guide explains how a web, mobile, Godot, Unity, or other game client integrates with the Threadman Leaderboard API. It is the complete contract for game developers: endpoints, limits, payloads, encryption, and error handling. Server setup, configuration, and internal architecture are out of scope here and live in [`maintainer.md`](maintainer.md).
 
 The integration has three steps:
 
@@ -282,17 +282,32 @@ GET /v1/game/threadman/leaderboard?date=2026-09-07
 
 The date must use exact `YYYY-MM-DD` format. The server interprets a missing date using its configured `LEADERBOARD_TIMEZONE`.
 
+All-time top 10 (every recorded day):
+
+```http
+GET /v1/game/threadman/leaderboard?period=all-time
+```
+
+`period=all-time` cannot be combined with `date`; sending both returns `400`. Any other `period` value is also rejected with `400`.
+
 Example:
 
 ```js
-async function getLeaderboard(date) {
-  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+async function getLeaderboard({ date, period } = {}) {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (period) params.set("period", period);
+  const query = params.size ? `?${params}` : "";
   const response = await fetch(
     `${API_BASE_URL}/v1/game/${GAME_CODE}/leaderboard${query}`,
   );
   if (!response.ok) throw await readError(response);
   return response.json();
 }
+
+// await getLeaderboard();                    // today
+// await getLeaderboard({ date: "2026-09-07" });
+// await getLeaderboard({ period: "all-time" });
 ```
 
 Response:
@@ -300,6 +315,7 @@ Response:
 ```json
 {
   "game_code": "threadman",
+  "period": "day",
   "score_date": "2026-09-07",
   "top10": [
     { "rank": 1, "player_name": "Ace", "score": 3200 },
@@ -308,7 +324,20 @@ Response:
 }
 ```
 
-An empty `top10` array is a valid response when no scores exist for the selected date.
+All-time response, which has no `score_date`:
+
+```json
+{
+  "game_code": "threadman",
+  "period": "all-time",
+  "top10": [
+    { "rank": 1, "player_name": "Ace", "score": 9900 },
+    { "rank": 2, "player_name": "Blitz", "score": 7400 }
+  ]
+}
+```
+
+An empty `top10` array is a valid response when no scores exist for the selected date or period.
 
 ## Error handling
 
@@ -323,7 +352,7 @@ All JSON errors have this shape:
 
 | Status | Meaning                                                                     | Client behavior                                              |
 | ------ | --------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `400`  | Invalid payload, name, score, duration, timestamp, date, or expired session | Show validation feedback; do not blindly retry               |
+| `400`  | Invalid payload, name, score, duration, timestamp, date, period, or expired session | Show validation feedback; do not blindly retry          |
 | `404`  | Unsupported game or unknown session                                         | Check the game code/session state                            |
 | `409`  | Session already used or unavailable                                         | Treat the attempt as finished; refresh leaderboard if needed |
 | `415`  | Missing/incorrect JSON content type                                         | Fix the request headers                                      |
