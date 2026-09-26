@@ -32,6 +32,17 @@ func DecryptSecret(masterKey []byte, encoded string) (string, error) {
 	return string(plain), nil
 }
 
+// EncryptAESGCM encrypts plaintext with the hex-encoded session secret. It is
+// the inverse of DecryptAESGCM and mirrors what game clients do, so tests can
+// build a payload the service will accept.
+func EncryptAESGCM(secretHex string, plaintext []byte) (string, error) {
+	key, err := hex.DecodeString(secretHex)
+	if err != nil || len(key) != AES256KeySize {
+		return "", errors.New("invalid AES-256 session key")
+	}
+	return encrypt(key, plaintext)
+}
+
 func DecryptAESGCM(secretHex, encoded string) ([]byte, error) {
 	key, err := hex.DecodeString(secretHex)
 	if err != nil || len(key) != AES256KeySize {

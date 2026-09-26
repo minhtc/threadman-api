@@ -137,6 +137,10 @@ func (r *PostgresRepository) Top10AllTime(ctx context.Context, gameCode string) 
 	return r.queryTop10(ctx, top10AllTimeSQL, gameCode)
 }
 
+// queryTop10 reads leaderboard rows and masks offensive words in the player
+// names. Names are stored raw, so censoring belongs here on the read path: every
+// client-visible name goes through this one function, and a name that is not on
+// a leaderboard is never returned to anyone.
 func (r *PostgresRepository) queryTop10(ctx context.Context, query string, args ...any) ([]LeaderboardEntry, error) {
 	rows, err := r.DB.Query(ctx, query, args...)
 	if err != nil {
@@ -151,6 +155,7 @@ func (r *PostgresRepository) queryTop10(ctx context.Context, query string, args 
 			return nil, err
 		}
 		entry.Rank = rank
+		entry.PlayerName = security.CensoredName(entry.PlayerName)
 		entries = append(entries, entry)
 	}
 	return entries, rows.Err()

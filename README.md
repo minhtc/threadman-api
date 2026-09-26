@@ -21,6 +21,7 @@ The README is only an entry point: features, quick start, and an endpoint summar
 - Server-derived player identity and atomic session consumption.
 - PostgreSQL advisory-lock protection for the active-session limit.
 - Daily and all-time top-10 leaderboards with deterministic tie-breaking.
+- Display-only profanity masking of player names, folded for case and Vietnamese diacritics.
 - UTF-8, control-character, zero-width, timestamp, duration, and score-rate validation.
 - Strict JSON decoding that rejects unknown fields and trailing values.
 - Configurable rate limits, HTTP timeouts, database pool limits, and trusted proxies.

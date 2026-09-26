@@ -148,6 +148,15 @@ Leaderboard query parameters:
 - `period=all-time` — top 10 across every recorded day. Cannot be combined with `date`; any other `period` value returns `400`.
 - Day responses include `period: "day"` and `score_date`; all-time responses include `period: "all-time"` and omit `score_date`.
 
+Player name masking:
+
+- `player_name` is stored raw and is never rewritten in the database. Masking happens on the read path, so only what a client receives is censored.
+- A listed word has its first two characters replaced with `**` and keeps the rest, so `fucker` returns as `**cker`, `shit` as `**it`, and `Đeo` as `**o`. The response never contains a full listed word.
+- Matching is whole-word plus the suffixes `er`, `ing`, `ed`, `es`, and `s`, so `fuckers` and `fucking` are caught while a stem short enough to be an ordinary word never is. That means `Classy`, `Audience`, `bass`, `Scunthorpe`, and `assess` are left alone even though `ass` and `die` are listed. Players who need a name changed should pick another name rather than rely on evasion.
+- Comparison folds case and Vietnamese diacritics, so `ĐÉO`, `đẹo`, and `deo` all match. The returned name keeps the player's original spelling and capitalization.
+- Multi-word slurs match as a consecutive run and are masked word by word, so neither component survives.
+- The word lists are generated from the [CMU bad-words list](https://www.cs.cmu.edu/~biglou/resources/bad-words.txt) and the [blue-eyes-vn Vietnamese list](https://github.com/blue-eyes-vn/vietnamese-offensive-words). Run `make wordlist` to refresh them from upstream.
+
 Every request receives `X-Request-ID`, and JSON error responses include the same ID:
 
 ```json

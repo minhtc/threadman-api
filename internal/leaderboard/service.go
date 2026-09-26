@@ -75,6 +75,9 @@ func (s *Service) SubmitScore(ctx context.Context, gameCode string, sessionID uu
 	if err != nil {
 		return SubmitResult{}, &InvalidPayloadError{Message: err.Error()}
 	}
+	// The score row keeps the raw name; CensoredName is applied on the read
+	// path, so this only masks the copy echoed back in the submit response.
+	displayName := security.CensoredName(name)
 	if err := security.ValidateScore(payload.Score, payload.DurationMs, payload.Timestamp, s.now()); err != nil {
 		return SubmitResult{}, &InvalidPayloadError{Message: err.Error()}
 	}
@@ -84,6 +87,7 @@ func (s *Service) SubmitScore(ctx context.Context, gameCode string, sessionID uu
 	if err != nil {
 		return SubmitResult{}, err
 	}
+	score.Name = displayName
 
 	result := SubmitResult{
 		ScoreDate: scoreDate,

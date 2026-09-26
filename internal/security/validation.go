@@ -47,6 +47,10 @@ func ValidateScore(score int64, durationMS int, timestamp int64, now time.Time) 
 	return nil
 }
 
+// SanitizePlayerName validates a player name. The returned name is the raw
+// player-supplied text and is what gets stored; profanity is not stripped here
+// because CensoredName is applied on the way out to clients instead, which
+// keeps the stored value faithful to what the player typed.
 func SanitizePlayerName(raw string) (string, error) {
 	if !utf8.ValidString(raw) {
 		return "", errors.New("player name must be valid UTF-8")

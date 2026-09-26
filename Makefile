@@ -1,4 +1,4 @@
-.PHONY: help fmt test race vet build run compose-up compose-down compose-reset
+.PHONY: help fmt test race vet build run wordlist compose-up compose-down compose-reset
 
 help:
 	@printf '%s\n' \
@@ -8,6 +8,7 @@ help:
 		'make vet          Run go vet' \
 		'make build        Build the API binary' \
 		'make run          Start the API locally' \
+		'make wordlist     Regenerate the embedded profanity word lists' \
 		'make compose-up   Start PostgreSQL and the API with Docker Compose' \
 		'make compose-down Stop Docker Compose services' \
 		'make compose-reset Stop services and remove the development database'
@@ -29,6 +30,11 @@ build:
 
 run:
 	go run ./cmd/server
+
+# Regenerates internal/security/wordlist from the upstream bad-words lists.
+wordlist:
+	go run ./cmd/wordlist
+	gofmt -w internal/security/wordlist
 
 compose-up:
 	docker compose up --build

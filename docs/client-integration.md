@@ -339,6 +339,12 @@ All-time response, which has no `score_date`:
 
 An empty `top10` array is a valid response when no scores exist for the selected date or period.
 
+### Player name masking
+
+`player_name` is stored exactly as submitted, but every name the API returns is masked for display. A listed word has its first two characters replaced with `**` and keeps the rest, so a name submitted as `fucker` comes back as `**cker` and `shit` as `**it`. Vietnamese diacritics and letter case are ignored when matching, but the returned name keeps the player's original spelling.
+
+Masking is whole-word only, plus common word endings, so names that merely contain a listed short word are returned unchanged. Render `player_name` as returned and do not attempt to reverse or reconstruct it; note that masking changes the length of a name, so size UI elements to fit the masked form.
+
 ## Error handling
 
 All JSON errors have this shape:

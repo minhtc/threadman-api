@@ -2,10 +2,14 @@ package leaderboard
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+
+	"threadman-api/internal/security"
 )
 
 type serviceRepository struct {
@@ -14,6 +18,7 @@ type serviceRepository struct {
 	activeSessions   int64
 	top10Date        string
 	allTimeGames     []string
+	storedName       string
 }
 
 func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID, _ string, _ uuid.UUID, _ string, _ time.Time, max int64) error {
@@ -25,11 +30,17 @@ func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID
 }
 
 func (r *serviceRepository) FindSession(context.Context, string, uuid.UUID) (Session, error) {
-	return Session{}, nil
+	return Session{
+		ID:        uuid.New(),
+		PlayerID:  uuid.New(),
+		Secret:    strings.Repeat("00", 32),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}, nil
 }
 
-func (r *serviceRepository) ConsumeAndCreateScore(context.Context, string, string, string, uuid.UUID, uuid.UUID, int64, int) (Score, error) {
-	return Score{}, nil
+func (r *serviceRepository) ConsumeAndCreateScore(_ context.Context, _ string, _ string, name string, _ uuid.UUID, _ uuid.UUID, _ int64, _ int) (Score, error) {
+	r.storedName = name
+	return Score{Name: name}, nil
 }
 
 func (r *serviceRepository) Rank(context.Context, string, string, int64, time.Time, int64) (int64, error) {
@@ -100,5 +111,40 @@ func TestCreateSessionRejectsTooManyActiveSessions(t *testing.T) {
 	_, err := service.CreateSession(context.Background(), GameThreadman, uuid.New())
 	if err != ErrTooManySessions {
 		t.Fatalf("CreateSession() error = %v, want %v", err, ErrTooManySessions)
+	}
+}
+
+// TestSubmitScoreStoresRawNameAndReturnsCensoredName pins the storage contract:
+// the raw player-supplied name reaches the database untouched, while the copy
+// echoed back in the response is masked for display.
+func TestSubmitScoreStoresRawNameAndReturnsCensoredName(t *testing.T) {
+	const raw = "Ace fucker"
+	repo := &serviceRepository{}
+	service := NewService(repo, time.UTC, 10*time.Minute, 5)
+	service.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
+
+	payload, err := json.Marshal(DecryptedPayload{
+		PlayerName: raw,
+		Score:      600,
+		DurationMs: 5000,
+		Timestamp:  1_700_000_000,
+	})
+	if err != nil {
+		t.Fatalf("marshal payload error = %v", err)
+	}
+	encoded, err := security.EncryptAESGCM(strings.Repeat("00", 32), payload)
+	if err != nil {
+		t.Fatalf("encrypt payload error = %v", err)
+	}
+
+	result, err := service.SubmitScore(context.Background(), GameThreadman, uuid.New(), encoded)
+	if err != nil {
+		t.Fatalf("SubmitScore() error = %v", err)
+	}
+	if repo.storedName != raw {
+		t.Errorf("stored name = %q, want the raw name %q", repo.storedName, raw)
+	}
+	if result.Score.Name != "Ace **cker" {
+		t.Errorf("returned name = %q, want the censored name %q", result.Score.Name, "Ace **cker")
 	}
 }
