@@ -323,7 +323,9 @@
         outline-offset: 2px;
       }
 
-      button:disabled {
+      button:disabled,
+      select:disabled,
+      input[type="date"]:disabled {
         cursor: not-allowed;
         opacity: 0.4;
         filter: grayscale(0.4);
@@ -816,6 +818,13 @@
           <div class="controls" aria-label="Leaderboard filters">
             <div class="control-row">
               <label class="field">
+                <span>Period</span>
+                <select id="period">
+                  <option value="day">Daily</option>
+                  <option value="all-time">All time</option>
+                </select>
+              </label>
+              <label class="field">
                 <span>Date</span>
                 <input id="date" type="date" />
               </label>
@@ -986,7 +995,7 @@
 
           <section>
             <div class="heading">
-              <h2>Top 10</h2>
+              <h2 id="board-title">Top 10</h2>
               <span id="date-label"></span>
             </div>
             <ol id="scores" aria-label="Daily high scores"></ol>
@@ -1002,7 +1011,9 @@
 
     <script>
       const game = "threadman";
+      const period = document.querySelector("#period");
       const date = document.querySelector("#date");
+      const heading = document.querySelector("#board-title");
       const load = document.querySelector("#load");
       const prevDay = document.querySelector("#prev-day");
       const nextDay = document.querySelector("#next-day");
@@ -1029,6 +1040,7 @@
       }
 
       function shiftDate(offsetDays) {
+        if (isAllTime()) return;
         if (!date.value) date.value = today;
         const next = parseDate(date.value);
         next.setDate(next.getDate() + offsetDays);
@@ -1039,9 +1051,15 @@
         fetchLeaderboard();
       }
 
+      function isAllTime() {
+        return period.value === "all-time";
+      }
+
       function updateNavState() {
-        nextDay.disabled = !date.value || date.value >= today;
-        prevDay.disabled = !date.value;
+        const allTime = isAllTime();
+        date.disabled = allTime;
+        nextDay.disabled = allTime || !date.value || date.value >= today;
+        prevDay.disabled = allTime || !date.value;
       }
 
       function render(entries) {
@@ -1052,10 +1070,13 @@
           : "Be the first to clear the stage";
 
         if (!entries.length) {
+          const hint = isAllTime()
+            ? "PLAY THE RUN TO CLIMB THE BOARD"
+            : "PICK ANOTHER DAY OR PLAY THE RUN";
           scores.innerHTML = `
             <li class="empty">
               <div></div>
-              <div><span class="blink">■</span> NO SCORES ON THIS DATE<br/>PICK ANOTHER DAY OR PLAY THE RUN</div>
+              <div><span class="blink">■</span> NO SCORES YET<br/>${hint}</div>
             </li>`;
           return;
         }
@@ -1085,14 +1106,18 @@
         status.classList.remove("error");
         status.textContent = "LOADING…";
         try {
-          const params = new URLSearchParams({ date: date.value });
+          const params = isAllTime()
+            ? new URLSearchParams({ period: "all-time" })
+            : new URLSearchParams({ date: date.value });
           const response = await fetch(
             `/v1/game/threadman/leaderboard?${params}`,
           );
           const data = await response.json();
           if (!response.ok)
             throw new Error(data.error || "Unable to load leaderboard");
-          dateLabel.textContent = data.score_date;
+          const allTime = data.period === "all-time";
+          heading.textContent = allTime ? "Top 10 · All time" : "Top 10";
+          dateLabel.textContent = allTime ? "ALL TIME" : data.score_date;
           render(data.top10 || []);
         } catch (error) {
           render([]);
@@ -1105,6 +1130,10 @@
       }
 
       load.addEventListener("click", fetchLeaderboard);
+      period.addEventListener("change", () => {
+        updateNavState();
+        fetchLeaderboard();
+      });
       date.addEventListener("change", () => {
         updateNavState();
         fetchLeaderboard();
