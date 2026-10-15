@@ -3,6 +3,7 @@ package leaderboard
 import (
 	"context"
 	"encoding/json"
+	"hash/fnv"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,16 @@ func NewService(repo Repository, timezone *time.Location, sessionTTL time.Durati
 }
 
 func (s *Service) CreateSession(ctx context.Context, gameCode string, playerID uuid.UUID) (Session, error) {
+	if IsDailyGame(gameCode) {
+		played, err := s.repo.HasScoreOnDate(ctx, gameCode, playerID, s.scoreDate())
+		if err != nil {
+			return Session{}, err
+		}
+		if played {
+			return Session{}, ErrDailyPlayed
+		}
+	}
+
 	secret, err := security.NewSessionSecret()
 	if err != nil {
 		return Session{}, err
@@ -120,6 +131,53 @@ func (s *Service) AllTimeLeaderboard(ctx context.Context, gameCode string) ([]Le
 
 func (s *Service) PruneSessions(ctx context.Context) error {
 	return s.repo.PruneExpiredSessions(ctx)
+}
+
+// Daily returns today's Daily Challenge date and seed. When playerID is set it
+// also reports whether that player has already posted today's daily score.
+func (s *Service) Daily(ctx context.Context, playerID *uuid.UUID) (DailyInfo, error) {
+	date := s.scoreDate()
+	info := DailyInfo{ScoreDate: date, Seed: DailySeed(date)}
+	if playerID != nil {
+		dates, err := s.repo.RecentScoreDates(ctx, GameThreadmanDaily, *playerID, date, maxStreakLookback)
+		if err != nil {
+			return DailyInfo{}, err
+		}
+		info.Played, info.Streak = dailyStreak(date, dates)
+	}
+	return info, nil
+}
+
+// maxStreakLookback caps the streak query; longer streaks display as the cap.
+const maxStreakLookback = 400
+
+// dailyStreak derives "played today" and the live streak from distinct score
+// dates (newest first, none after today).
+func dailyStreak(today string, dates []string) (played bool, streak int) {
+	day, err := time.Parse(dateTimeLayout, today)
+	if err != nil || len(dates) == 0 {
+		return false, 0
+	}
+	played = dates[0] == today
+	if !played {
+		day = day.AddDate(0, 0, -1) // today is still open: count from yesterday
+	}
+	for _, d := range dates {
+		if d != day.Format(dateTimeLayout) {
+			break
+		}
+		streak++
+		day = day.AddDate(0, 0, -1)
+	}
+	return played, streak
+}
+
+// DailySeed is the run seed for a leaderboard day (FNV-1a of a fixed prefix
+// and the date). It is public on purpose: every player gets the same run.
+func DailySeed(date string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte("threadman-daily:" + date))
+	return h.Sum32()
 }
 
 func (s *Service) scoreDate() string {

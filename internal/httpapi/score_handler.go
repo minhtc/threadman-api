@@ -28,8 +28,12 @@ func (h *Handler) submitScore(c fiber.Ctx) error {
 
 	result, err := h.service.SubmitScore(ctx, c.Params("gameCode"), sessionID, req.Payload)
 	if err != nil {
+		if errors.Is(err, leaderboard.ErrDailyPlayed) {
+			h.metrics.dailyRejected.Add(1)
+		}
 		return h.submitError(c, err)
 	}
+	h.metrics.scoresSubmitted[gameIndex(c.Params("gameCode"))].Add(1)
 
 	return c.JSON(fiber.Map{
 		"submitted_score": fiber.Map{
@@ -50,7 +54,7 @@ func (h *Handler) submitError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, leaderboard.ErrNotFound):
 		return jsonError(c, fiber.StatusNotFound, "session not found")
-	case errors.Is(err, leaderboard.ErrSessionUnavailable), errors.Is(err, leaderboard.ErrSessionUsed):
+	case errors.Is(err, leaderboard.ErrSessionUnavailable), errors.Is(err, leaderboard.ErrSessionUsed), errors.Is(err, leaderboard.ErrDailyPlayed):
 		return jsonError(c, fiber.StatusConflict, err.Error())
 	case errors.Is(err, leaderboard.ErrSessionExpired), errors.Is(err, leaderboard.ErrInvalidPayload):
 		return jsonError(c, fiber.StatusBadRequest, err.Error())

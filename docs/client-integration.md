@@ -345,6 +345,50 @@ An empty `top10` array is a valid response when no scores exist for the selected
 
 Masking is whole-word only, plus common word endings, so names that merely contain a listed short word are returned unchanged. Render `player_name` as returned and do not attempt to reverse or reconstruct it; note that masking changes the length of a name, so size UI elements to fit the masked form.
 
+## Daily Challenge
+
+The Daily Challenge is a second board under its own game code,
+`threadman_daily`. Every player gets the same seeded run, and each player may
+post **one score per leaderboard day**. Sessions, encryption, submission and
+leaderboard reads work exactly as for `threadman`; only the game code in the
+path changes.
+
+### Today's seed
+
+```http
+GET /v1/game/threadman_daily/daily?player_id=<uuid>
+```
+
+```json
+{ "score_date": "2026-10-14", "seed": 796969165, "played": false, "streak": 3 }
+```
+
+- `score_date` is the leaderboard day in the server's leaderboard timezone.
+- `seed` is FNV-1a (32-bit) of the string `threadman-daily:<score_date>`. It
+  is public on purpose, and clients may compute it offline with the same
+  formula (the game falls back to this, unranked, when the API is unreachable).
+- `played` is `true` when this player already has a score on today's daily
+  board. `player_id` is optional; without it `played` is always `false`.
+- `streak` counts consecutive days with a daily score. It ends today when
+  `played`, otherwise yesterday, so a streak stays alive until a whole day is
+  missed. Without `player_id` it is `0`.
+- `GET /v1/game/threadman/daily` returns `404`.
+
+### One attempt per day
+
+- `POST /v1/game/threadman_daily/session` returns **409** with
+  `"daily challenge already played today"` once the player has a daily score
+  for the current day.
+- `POST /v1/game/threadman_daily/score` returns the same **409** if a second
+  score for the same player and day races in. This is enforced by the
+  `uniq_daily_score_per_player` partial unique index.
+
+### Reading the board
+
+```http
+GET /v1/game/threadman_daily/leaderboard[?date=YYYY-MM-DD | ?period=all-time]
+```
+
 ## Error handling
 
 All JSON errors have this shape:

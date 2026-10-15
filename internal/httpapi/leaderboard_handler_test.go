@@ -49,6 +49,14 @@ func (r *leaderboardRepositoryStub) Top10AllTime(context.Context, string) ([]lea
 
 func (r *leaderboardRepositoryStub) PruneExpiredSessions(context.Context) error { return nil }
 
+func (r *leaderboardRepositoryStub) RecentScoreDates(context.Context, string, uuid.UUID, string, int) ([]string, error) {
+	return nil, nil
+}
+
+func (r *leaderboardRepositoryStub) HasScoreOnDate(context.Context, string, uuid.UUID, string) (bool, error) {
+	return false, nil
+}
+
 func newLeaderboardTestApp(repo leaderboard.Repository) *fiber.App {
 	handler := NewHandler(leaderboard.NewService(repo, time.UTC, 10*time.Minute, 5), nil, nil)
 	app := fiber.New()

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"threadman-api/internal/security"
@@ -21,6 +22,10 @@ type Repository interface {
 	Top10(ctx context.Context, gameCode, scoreDate string) ([]LeaderboardEntry, error)
 	Top10AllTime(ctx context.Context, gameCode string) ([]LeaderboardEntry, error)
 	PruneExpiredSessions(ctx context.Context) error
+	HasScoreOnDate(ctx context.Context, gameCode string, playerID uuid.UUID, scoreDate string) (bool, error)
+	// RecentScoreDates returns the player's distinct score dates on or before
+	// `through`, newest first, at most `limit` of them.
+	RecentScoreDates(ctx context.Context, gameCode string, playerID uuid.UUID, through string, limit int) ([]string, error)
 }
 
 type PostgresRepository struct {
@@ -38,6 +43,8 @@ const (
 	rankSQL                 = `SELECT COUNT(*) + 1 FROM game_scores WHERE game_code = $1 AND score_date = $2 AND (score > $3 OR (score = $3 AND (created_at < $4 OR (created_at = $4 AND id < $5))))`
 	top10SQL                = `SELECT player_name, score FROM game_scores WHERE game_code = $1 AND score_date = $2 ORDER BY score DESC, created_at ASC, id ASC LIMIT 10`
 	top10AllTimeSQL         = `SELECT player_name, score FROM game_scores WHERE game_code = $1 ORDER BY score DESC, created_at ASC, id ASC LIMIT 10`
+	hasScoreOnDateSQL       = `SELECT EXISTS (SELECT 1 FROM game_scores WHERE game_code = $1 AND player_id = $2 AND score_date = $3)`
+	recentScoreDatesSQL     = `SELECT DISTINCT score_date FROM game_scores WHERE game_code = $1 AND player_id = $2 AND score_date <= $3 ORDER BY score_date DESC LIMIT $4`
 	pruneExpiredSessionsSQL = `DELETE FROM game_sessions WHERE expires_at < NOW() - INTERVAL '24 hours' AND submitted_at IS NULL`
 )
 
@@ -113,6 +120,10 @@ func (r *PostgresRepository) ConsumeAndCreateScore(ctx context.Context, gameCode
 	err = tx.QueryRow(ctx, insertScoreSQL, sessionID, gameCode, playerID, name, score, durationMS, scoreDate).
 		Scan(&result.ID, &result.CreatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uniq_daily_score_per_player" {
+			return Score{}, ErrDailyPlayed
+		}
 		return Score{}, err
 	}
 	result.PlayerID, result.Name, result.Value = playerID, name, score
@@ -164,4 +175,28 @@ func (r *PostgresRepository) queryTop10(ctx context.Context, query string, args 
 func (r *PostgresRepository) PruneExpiredSessions(ctx context.Context) error {
 	_, err := r.DB.Exec(ctx, pruneExpiredSessionsSQL)
 	return err
+}
+
+func (r *PostgresRepository) HasScoreOnDate(ctx context.Context, gameCode string, playerID uuid.UUID, scoreDate string) (bool, error) {
+	var exists bool
+	err := r.DB.QueryRow(ctx, hasScoreOnDateSQL, gameCode, playerID, scoreDate).Scan(&exists)
+	return exists, err
+}
+
+func (r *PostgresRepository) RecentScoreDates(ctx context.Context, gameCode string, playerID uuid.UUID, through string, limit int) ([]string, error) {
+	rows, err := r.DB.Query(ctx, recentScoreDatesSQL, gameCode, playerID, through, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	dates := make([]string, 0, limit)
+	for rows.Next() {
+		var d time.Time
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		dates = append(dates, d.Format(dateTimeLayout))
+	}
+	return dates, rows.Err()
 }

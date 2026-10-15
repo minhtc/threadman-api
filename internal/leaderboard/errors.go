@@ -9,6 +9,7 @@ var (
 	ErrSessionUsed        = errors.New("session already used")
 	ErrSessionExpired     = errors.New("session expired")
 	ErrInvalidPayload     = errors.New("invalid score payload")
+	ErrDailyPlayed        = errors.New("daily challenge already played today")
 )
 
 type InvalidPayloadError struct{ Message string }

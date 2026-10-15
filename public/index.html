@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>ThreadMan Leaderboard: daily &amp; all-time top 10</title>
-    <meta name="description" content="Live ThreadMan leaderboard: today's top 10 runs and the all-time hall of fame. Swing the neon skyline, dodge, rescue pets and climb the board." />
+    <meta name="description" content="Live ThreadMan leaderboard: today's top 10 runs, the Daily Challenge board and the all-time hall of fame. Swing the neon skyline, dodge, rescue pets and climb the board." />
     <meta name="theme-color" content="#0b1222" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="ThreadMan Leaderboard" />
@@ -382,7 +382,7 @@
         header.top .pix-btn { display: none; }
         .board { padding: 12px; }
         .toolbar { flex-direction: column; align-items: stretch; }
-        .tabs .pix-btn { flex: 1; min-width: 0; }
+        .tabs .pix-btn { flex: 1; min-width: 0; white-space: nowrap; padding-left: 6px; padding-right: 6px; letter-spacing: 0; }
         .stepper .datebtn { flex: 1; min-width: 0; }
         .meta { justify-content: space-between; }
         .podium { grid-template-columns: 1fr; }
@@ -444,6 +444,7 @@
         <div class="toolbar">
           <div class="tabs" role="tablist" aria-label="Leaderboard period">
             <button class="pix-btn pix-btn-picked" role="tab" id="tab-day" aria-selected="true" aria-controls="board-body" type="button">Daily</button>
+            <button class="pix-btn pix-btn-slate" role="tab" id="tab-chal" aria-selected="false" aria-controls="board-body" type="button" title="Daily Challenge: the same seeded run for everyone, one try per day">Challenge</button>
             <button class="pix-btn pix-btn-slate" role="tab" id="tab-all" aria-selected="false" aria-controls="board-body" type="button">All time</button>
           </div>
           <div class="stepper" id="stepper">
@@ -475,11 +476,12 @@
 
     <script>
       (() => {
-        const API = "/v1/game/threadman/leaderboard";
+        // Daily Challenge scores live on their own game code.
+        const apiFor = (period) => `/v1/game/${period === "challenge" ? "threadman_daily" : "threadman"}/leaderboard`;
         const REFRESH_MS = 60000;
         const $ = (id) => document.getElementById(id);
         const el = {
-          tabDay: $("tab-day"), tabAll: $("tab-all"), stepper: $("stepper"),
+          tabDay: $("tab-day"), tabChal: $("tab-chal"), tabAll: $("tab-all"), stepper: $("stepper"),
           prev: $("prev"), next: $("next"), date: $("date"), dateText: $("date-text"),
           updated: $("updated"), refresh: $("refresh"), body: $("board-body"),
           podium: $("podium"), rows: $("rows"), state: $("state"),
@@ -497,7 +499,7 @@
         let today = fmt(new Date());
         const qs = new URLSearchParams(location.search);
         const state = {
-          period: qs.get("period") === "all-time" ? "all-time" : "day",
+          period: ["all-time", "challenge"].includes(qs.get("period")) ? qs.get("period") : "day",
           date: /^\d{4}-\d{2}-\d{2}$/.test(qs.get("date") || "") ? qs.get("date") : null,
         };
         let timer = 0;
@@ -512,12 +514,13 @@
         function syncControls() {
           const all = state.period === "all-time";
           const viewing = state.date || today;
-          for (const [tab, on] of [[el.tabDay, !all], [el.tabAll, all]]) {
+          const chal = state.period === "challenge";
+          for (const [tab, on] of [[el.tabDay, state.period === "day"], [el.tabChal, chal], [el.tabAll, all]]) {
             tab.setAttribute("aria-selected", String(on));
             tab.classList.toggle("pix-btn-picked", on);
             tab.classList.toggle("pix-btn-slate", !on);
           }
-          el.body.setAttribute("aria-labelledby", all ? "tab-all" : "tab-day");
+          el.body.setAttribute("aria-labelledby", all ? "tab-all" : chal ? "tab-chal" : "tab-day");
           el.stepper.classList.toggle("is-hidden", all);
           el.date.max = today;
           el.date.value = viewing;
@@ -526,10 +529,13 @@
           const live = all || viewing === today;
           el.kicker.classList.toggle("live", live);
           el.kicker.lastChild.textContent = live ? " Live scores" : " Past results";
-          el.champLabel.textContent = all ? "All-time champion" : viewing === today ? "Today's champion" : `Champion · ${dayLabel(viewing)}`;
+          el.champLabel.textContent = all ? "All-time champion" : chal ? (viewing === today ? "Today's challenge champion" : `Challenge · ${dayLabel(viewing)}`) : viewing === today ? "Today's champion" : `Champion · ${dayLabel(viewing)}`;
           const p = new URLSearchParams();
           if (all) p.set("period", "all-time");
-          else if (state.date && state.date !== today) p.set("date", state.date);
+          else {
+            if (chal) p.set("period", "challenge");
+            if (state.date && state.date !== today) p.set("date", state.date);
+          }
           const url = p.size ? `?${p}` : location.pathname;
           history.replaceState(null, "", url);
         }
@@ -586,7 +592,7 @@
             dl.className = "pix-btn pix-btn-amber";
             dl.href = "#download";
             dl.textContent = "Get the game";
-            const past = state.period === "day" && (state.date || today) !== today;
+            const past = state.period !== "all-time" && (state.date || today) !== today;
             showState("empty",
               past ? "No runs that day" : "The board is empty",
               past ? "Nobody posted a score on this day. Try another date." : "No one has posted a run yet. Be the first name on the board.",
@@ -634,7 +640,7 @@
           if (state.period === "all-time") params.set("period", "all-time");
           else if (state.date) params.set("date", state.date);
           try {
-            const res = await fetch(`${API}${params.size ? `?${params}` : ""}`, { signal: ctrl.signal, headers: { Accept: "application/json" } });
+            const res = await fetch(`${apiFor(state.period)}${params.size ? `?${params}` : ""}`, { signal: ctrl.signal, headers: { Accept: "application/json" } });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
               throw new Error(
@@ -690,6 +696,7 @@
         }
 
         el.tabDay.addEventListener("click", () => setPeriod("day"));
+        el.tabChal.addEventListener("click", () => setPeriod("challenge"));
         el.tabAll.addEventListener("click", () => setPeriod("all-time"));
         el.prev.addEventListener("click", () => setDate(shift(state.date || today, -1)));
         el.next.addEventListener("click", () => setDate(shift(state.date || today, 1)));
@@ -698,12 +705,14 @@
         document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           e.preventDefault();
-          const to = state.period === "day" ? el.tabAll : el.tabDay;
+          const tabs = [el.tabDay, el.tabChal, el.tabAll];
+          const at = ["day", "challenge", "all-time"].indexOf(state.period);
+          const to = tabs[(at + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
           to.click();
           to.focus();
         });
         document.addEventListener("keydown", (e) => {
-          if (state.period !== "day" || e.target.closest("input, select, textarea, [role=tablist]")) return;
+          if (state.period === "all-time" || e.target.closest("input, select, textarea, [role=tablist]")) return;
           if (e.key === "ArrowLeft") el.prev.click();
           if (e.key === "ArrowRight" && !el.next.disabled) el.next.click();
         });

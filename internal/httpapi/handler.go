@@ -86,6 +86,10 @@ func (h *Handler) Register(app *fiber.App, cfg *config.Config) {
 		newRateLimiter(cfg.LeaderboardRateLimit, cfg.RateLimitWindow),
 		h.getLeaderboard,
 	)
+	api.Get("/daily",
+		newRateLimiter(cfg.LeaderboardRateLimit, cfg.RateLimitWindow),
+		h.getDaily,
+	)
 }
 
 func newRateLimiter(max int, window time.Duration) fiber.Handler {
@@ -160,10 +164,15 @@ func (h *Handler) createSession(c fiber.Ctx) error {
 		if errors.Is(err, leaderboard.ErrTooManySessions) {
 			return jsonError(c, fiber.StatusTooManyRequests, err.Error())
 		}
+		if errors.Is(err, leaderboard.ErrDailyPlayed) {
+			h.metrics.dailyRejected.Add(1)
+			return jsonError(c, fiber.StatusConflict, err.Error())
+		}
 		slog.Error("create_session_failed", "request_id", requestID(c), "error", err)
 		return jsonError(c, fiber.StatusInternalServerError, "session database error")
 	}
 
+	h.metrics.sessionsCreated[gameIndex(c.Params("gameCode"))].Add(1)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"session_id":     session.ID.String(),
 		"session_secret": session.Secret,

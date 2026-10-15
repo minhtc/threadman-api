@@ -19,6 +19,9 @@ type serviceRepository struct {
 	top10Date        string
 	allTimeGames     []string
 	storedName       string
+	dailyPlayed      bool
+	dailyCheckedDate string
+	recentDates      []string
 }
 
 func (r *serviceRepository) CreateSession(_ context.Context, sessionID uuid.UUID, _ string, _ uuid.UUID, _ string, _ time.Time, max int64) error {
@@ -58,6 +61,22 @@ func (r *serviceRepository) Top10AllTime(_ context.Context, gameCode string) ([]
 }
 
 func (r *serviceRepository) PruneExpiredSessions(context.Context) error { return nil }
+
+func (r *serviceRepository) RecentScoreDates(_ context.Context, _ string, _ uuid.UUID, through string, _ int) ([]string, error) {
+	r.dailyCheckedDate = through
+	if r.recentDates != nil {
+		return r.recentDates, nil
+	}
+	if r.dailyPlayed {
+		return []string{through}, nil
+	}
+	return nil, nil
+}
+
+func (r *serviceRepository) HasScoreOnDate(_ context.Context, _ string, _ uuid.UUID, date string) (bool, error) {
+	r.dailyCheckedDate = date
+	return r.dailyPlayed, nil
+}
 
 func TestLeaderboardUsesRequestedDate(t *testing.T) {
 	repo := &serviceRepository{}
@@ -146,5 +165,91 @@ func TestSubmitScoreStoresRawNameAndReturnsCensoredName(t *testing.T) {
 	}
 	if result.Score.Name != "Ace **cker" {
 		t.Errorf("returned name = %q, want the censored name %q", result.Score.Name, "Ace **cker")
+	}
+}
+
+func TestDailySeedIsStablePerDate(t *testing.T) {
+	if DailySeed("2026-10-14") != DailySeed("2026-10-14") {
+		t.Fatal("seed must be deterministic")
+	}
+	if DailySeed("2026-10-14") == DailySeed("2026-10-15") {
+		t.Fatal("consecutive days should not share a seed")
+	}
+}
+
+func TestDailyCreateSessionRejectsSecondAttempt(t *testing.T) {
+	repo := &serviceRepository{dailyPlayed: true}
+	service := NewService(repo, time.UTC, time.Hour, 5)
+	if _, err := service.CreateSession(context.Background(), GameThreadmanDaily, uuid.New()); err != ErrDailyPlayed {
+		t.Fatalf("err = %v, want ErrDailyPlayed", err)
+	}
+	if repo.createdSession {
+		t.Fatal("no session should be created after the daily run was played")
+	}
+}
+
+func TestRegularCreateSessionSkipsDailyCheck(t *testing.T) {
+	repo := &serviceRepository{dailyPlayed: true}
+	service := NewService(repo, time.UTC, time.Hour, 5)
+	if _, err := service.CreateSession(context.Background(), GameThreadman, uuid.New()); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if repo.dailyCheckedDate != "" {
+		t.Fatal("regular runs must not consult the daily table")
+	}
+}
+
+func TestDailyInfoReportsPlayed(t *testing.T) {
+	repo := &serviceRepository{dailyPlayed: true}
+	service := NewService(repo, time.UTC, time.Hour, 5)
+	service.now = func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) }
+	id := uuid.New()
+	info, err := service.Daily(context.Background(), &id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ScoreDate != "2026-10-14" || !info.Played || info.Seed != DailySeed("2026-10-14") {
+		t.Fatalf("info = %+v", info)
+	}
+}
+
+func TestDailyStreak(t *testing.T) {
+	cases := []struct {
+		name   string
+		dates  []string
+		played bool
+		streak int
+	}{
+		{"none", nil, false, 0},
+		{"today only", []string{"2026-10-14"}, true, 1},
+		{"through today", []string{"2026-10-14", "2026-10-13", "2026-10-12"}, true, 3},
+		{"alive from yesterday", []string{"2026-10-13", "2026-10-12"}, false, 2},
+		{"broken", []string{"2026-10-12", "2026-10-11"}, false, 0},
+		{"gap stops count", []string{"2026-10-14", "2026-10-13", "2026-10-10"}, true, 2},
+		{"month boundary", []string{"2026-03-01", "2026-02-28", "2026-02-27"}, true, 3},
+	}
+	for _, tc := range cases {
+		today := "2026-10-14"
+		if tc.name == "month boundary" {
+			today = "2026-03-01"
+		}
+		played, streak := dailyStreak(today, tc.dates)
+		if played != tc.played || streak != tc.streak {
+			t.Errorf("%s: got played=%v streak=%d, want %v %d", tc.name, played, streak, tc.played, tc.streak)
+		}
+	}
+}
+
+func TestDailyInfoStreak(t *testing.T) {
+	repo := &serviceRepository{recentDates: []string{"2026-10-13", "2026-10-12", "2026-10-11"}}
+	service := NewService(repo, time.UTC, time.Hour, 5)
+	service.now = func() time.Time { return time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC) }
+	id := uuid.New()
+	info, err := service.Daily(context.Background(), &id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Played || info.Streak != 3 {
+		t.Fatalf("info = %+v, want played=false streak=3", info)
 	}
 }

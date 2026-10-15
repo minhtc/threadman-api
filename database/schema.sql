@@ -42,3 +42,9 @@ ON game_scores (game_code, score_date, score DESC, created_at ASC, id ASC);
 
 CREATE INDEX IF NOT EXISTS idx_game_scores_all_time
 ON game_scores (game_code, score DESC, created_at ASC, id ASC);
+
+-- Daily Challenge: one score per player per leaderboard day. Also backs the
+-- "already played today?" lookup.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_daily_score_per_player
+ON game_scores (player_id, score_date)
+WHERE game_code = 'threadman_daily';
